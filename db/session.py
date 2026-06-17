@@ -24,7 +24,17 @@ def init_db() -> None:
 
 # Lightweight additive migrations for columns added after a DB was first created.
 _MIGRATIONS = {
-    "digest_runs": {"telegram_sent": "BOOLEAN DEFAULT 0"},
+    "digest_runs": {
+        "telegram_sent": "BOOLEAN DEFAULT 0",
+        "source_run_id": "INTEGER",
+        "digest_style": "VARCHAR",
+        "clustering_method": "VARCHAR",
+        "ollama_model": "VARCHAR",
+        "time_window_hours": "INTEGER",
+        "max_themes": "INTEGER",
+        "topics": "VARCHAR",
+        "account_count": "INTEGER",
+    },
     "settings": {
         "exclude_keywords": "VARCHAR DEFAULT ''",
         "clustering_method": "VARCHAR DEFAULT 'llm'",

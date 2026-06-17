@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% set active = 'runs' %}
+{% block content %}
+<div class="flex-between">
+  <div>
+    <h2>Run #{{ run.id }}</h2>
+    <p class="sub">
+      <span class="pill {{ run.status.value }}">{{ run.status.value }}</span>
+      {% if run.source_run_id %} · replay of <a href="/runs/{{ run.source_run_id }}">#{{ run.source_run_id }}</a>{% endif %}
+      {% if run.started_at %} · {{ run.started_at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+    </p>
+  </div>
+  <a class="btn btn-ghost btn-sm" href="/runs">← All runs</a>
+</div>
+
+{% if run.error %}
+<div class="card" style="border-color:#f4212e;">
+  <strong style="color:#c81e1e;">Error</strong>
+  <p class="muted" style="margin-top:6px;color:#c81e1e;">{{ run.error }}</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <strong>What this run did</strong>
+  <div class="grid" style="margin-top:12px;">
+    <div class="stat"><div class="n">{{ run.tweet_count }}</div><div class="l">Tweets digested</div></div>
+    <div class="stat"><div class="n">{{ run.theme_count }}</div><div class="l">Themes</div></div>
+    <div class="stat"><div class="n">{{ run.account_count if run.account_count is not none else '—' }}</div><div class="l">Accounts</div></div>
+  </div>
+  <table style="margin-top:14px;">
+    <tr><th>Digest style</th><td>{{ run.digest_style or '—' }}</td></tr>
+    <tr><th>Clustering</th><td>{{ run.clustering_method or '—' }}</td></tr>
+    <tr><th>Model</th><td>{{ run.ollama_model or '—' }}</td></tr>
+    <tr><th>Time window</th><td>{{ (run.time_window_hours ~ 'h') if run.time_window_hours else '—' }}</td></tr>
+    <tr><th>Topics</th><td>{{ run.topics or '—' }}</td></tr>
+    <tr><th>Delivered</th><td>
+      {% if run.emailed %}✉️ email{% endif %}
+      {% if run.telegram_sent %}📨 Telegram{% endif %}
+      {% if not run.emailed and not run.telegram_sent %}<span class="muted">not sent</span>{% endif %}
+    </td></tr>
+    <tr><th>Digest</th><td>
+      {% if run.digest_path %}<a href="/digest/{{ run.id }}" target="_blank">View HTML</a>{% else %}<span class="muted">—</span>{% endif %}
+    </td></tr>
+  </table>
+</div>
+
+{% if themes %}
+<div class="card">
+  <strong>Themes ({{ themes|length }})</strong>
+  {% for t in themes %}
+  <div style="padding:12px 0;border-bottom:1px solid var(--line);">
+    <div style="font-weight:600;">{{ t.title }}</div>
+    <div class="muted" style="font-size:14px;margin-top:4px;">{{ t.summary }}</div>
+    <div class="muted" style="font-size:12px;margin-top:4px;">{{ t.tweet_ids|length }} tweet(s)</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if accounts %}
+<div class="card">
+  <strong>Accounts captured ({{ accounts|length }})</strong>
+  <table style="margin-top:10px;">
+    <tr><th>Handle</th><th>Tweets</th></tr>
+    {% for handle, n in accounts %}
+    <tr><td>@{{ handle }}</td><td class="muted">{{ n }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <strong>Re-run this digest</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;">
+    Regenerates from this run's captured tweets — no re-scraping. Creates a new run linked to this one.
+  </p>
+  {% if replayable %}
+  <form method="post" action="/runs/{{ run.id }}/rerun">
+    <div class="row">
+      <div>
+        <label>Digest style</label>
+        <select name="digest_style">
+          {% for s in styles %}<option value="{{ s }}" {% if s == run.digest_style %}selected{% endif %}>{{ s }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Clustering</label>
+        <select name="clustering_method">
+          {% for m in methods %}<option value="{{ m }}" {% if m == run.clustering_method %}selected{% endif %}>{{ m }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div><label>Model</label><input type="text" name="ollama_model" value="{{ run.ollama_model or 'gemma4:e4b' }}"></div>
+      <div><label>Similarity threshold (embedding)</label><input type="number" step="0.05" min="0" max="1" name="similarity_threshold" value="0.55"></div>
+    </div>
+    <label>Topics focus (comma-separated, optional)</label>
+    <input type="text" name="topics" value="{{ current_topics }}">
+    <div class="check">
+      <input type="checkbox" id="dlv" name="deliver">
+      <label for="dlv" style="margin:0;">Also email / Telegram this re-run</label>
+    </div>
+    <div style="margin-top:14px;">
+      <button {% if running %}disabled{% endif %}>{{ 'Running…' if running else 'Re-run' }}</button>
+    </div>
+  </form>
+  {% else %}
+  <p class="muted" style="margin-top:10px;">
+    This run can't be replayed — its saved snapshots are no longer on disk.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

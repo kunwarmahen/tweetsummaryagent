@@ -61,6 +61,51 @@ def delete_run(run_id: int):
     return RedirectResponse("/runs", status_code=303)
 
 
+@router.get("/runs/{run_id}", response_class=HTMLResponse)
+def run_detail(run_id: int, request: Request):
+    from state import load_latest_snapshot
+
+    with get_session() as s:
+        row = s.get(DigestRun, run_id)
+        topics = [t.name for t in s.exec(select(Topic).order_by(Topic.name)).all()]
+        accounts = s.exec(
+            select(RawTweet.handle, func.count(RawTweet.id))
+            .where(RawTweet.run_id == run_id)
+            .group_by(RawTweet.handle).order_by(func.count(RawTweet.id).desc())
+        ).all()
+    if row is None:
+        return HTMLResponse("<p>Run not found.</p>", status_code=404)
+
+    # Theme titles/summaries from the furthest snapshot (if still on disk).
+    snap = load_latest_snapshot(pipeline.settings.data_dir, run_id)
+    themes = snap[0].themes if snap else []
+
+    return templates.TemplateResponse(request, "run_detail.html", {
+        "run": row, "themes": themes, "accounts": accounts,
+        "replayable": pipeline.is_replayable(run_id), "running": is_running(),
+        "styles": [s.value for s in DigestStyle],
+        "methods": [m.value for m in ClusteringMethod],
+        "current_topics": ", ".join(topics),
+    })
+
+
+@router.post("/runs/{run_id}/rerun")
+def rerun_run(run_id: int, background_tasks: BackgroundTasks,
+              digest_style: str = Form(...), clustering_method: str = Form(...),
+              ollama_model: str = Form(...), similarity_threshold: float = Form(0.55),
+              topics: str = Form(""), deliver: str = Form(None)):
+    overrides = {
+        "digest_style": DigestStyle(digest_style),
+        "clustering_method": ClusteringMethod(clustering_method),
+        "ollama_model": ollama_model.strip(),
+        "similarity_threshold": max(0.0, min(1.0, similarity_threshold)),
+        "topics_override": [t.strip() for t in topics.split(",") if t.strip()],
+    }
+    if not is_running():
+        background_tasks.add_task(pipeline.replay_guarded, run_id, overrides, deliver is not None)
+    return RedirectResponse("/runs", status_code=303)
+
+
 # ---------------------------------------------------------------- Accounts
 @router.get("/accounts", response_class=HTMLResponse)
 def accounts(request: Request):

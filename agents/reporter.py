@@ -59,12 +59,16 @@ class Reporter(Agent):
         state.digest_path = str(out_path)
         self.log.info("Digest written to %s", out_path)
 
-        # Deliver (only when there's something to say and a channel is configured).
-        if state.themes:
+        # Deliver (only when there's something to say, a channel is configured, and delivery
+        # isn't disabled — e.g. a re-run/replay defaults to not sending).
+        deliver = getattr(self.ctx.app_settings, "deliver", True)
+        if state.themes and deliver:
             subject = f"Daily X Digest — {now.strftime('%b %d')} ({len(state.themes)} themes)"
             state.emailed = self._send_email(subject, html)
             state.telegram_sent = self._send_telegram(themes, now.strftime("%A, %B %d"),
                                                        len(state.filtered_tweets))
+        elif state.themes and not deliver:
+            self.log.info("Delivery disabled for this run; digest saved only")
         return state
 
     def _send_telegram(self, themes: list[dict], date_str: str, total_tweets: int) -> bool:

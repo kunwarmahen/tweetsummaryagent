@@ -61,11 +61,63 @@ def resume_guarded(run_id: int | None = None) -> DigestRun | None:
         _run_lock.release()
 
 
-def _load_app_settings():
+def replay_guarded(source_run_id: int, overrides: dict | None = None,
+                   deliver: bool = False) -> DigestRun | None:
+    """Replay a past run (no re-scrape) unless one is already in progress."""
+    if not _run_lock.acquire(blocking=False):
+        logger.info("A run is already in progress; skipping replay.")
+        return None
+    try:
+        return replay(source_run_id, overrides=overrides, deliver=deliver)
+    except Exception:
+        return None  # already recorded on the DigestRun row
+    finally:
+        _run_lock.release()
+
+
+def _to_namespace(aps, overrides: dict | None = None):
+    """Copy a settings object into a plain namespace that can also hold per-run transient
+    overrides (topics_override/deliver) the SQLModel itself would reject. Preserves enums."""
+    from types import SimpleNamespace
+
+    ns = SimpleNamespace(**{name: getattr(aps, name) for name in type(aps).model_fields})
+    for key, value in (overrides or {}).items():
+        setattr(ns, key, value)
+    return ns
+
+
+def _load_app_settings(overrides: dict | None = None):
     with get_session() as session:
-        app_settings = get_settings(session)
-        session.expunge(app_settings)   # detach but keep loaded values
-    return app_settings
+        return _to_namespace(get_settings(session), overrides)
+
+
+def _effective_topics(app_settings) -> list[str]:
+    """Topics this run will use: a per-run override if set, else the global Topic table."""
+    from sqlmodel import select
+
+    from db.models import Topic
+    override = getattr(app_settings, "topics_override", None)
+    if override is not None:
+        return override
+    with get_session() as session:
+        return [t.name for t in session.exec(select(Topic)).all()]
+
+
+def _record_params(run_id: int, app_settings, source_run_id: int | None) -> None:
+    """Snapshot the effective parameters onto the run row (so the UI shows 'what we did')."""
+    with get_session() as session:
+        row = session.get(DigestRunRow, run_id)
+        if row is None:
+            return
+        row.source_run_id = source_run_id
+        row.digest_style = app_settings.digest_style.value
+        row.clustering_method = app_settings.clustering_method.value
+        row.ollama_model = app_settings.ollama_model
+        row.time_window_hours = app_settings.time_window_hours
+        row.max_themes = app_settings.max_themes
+        row.topics = ", ".join(_effective_topics(app_settings)) or None
+        session.add(row)
+        session.commit()
 
 
 def _create_run_row() -> int:
@@ -88,6 +140,9 @@ def _finish_run_row(run_id: int, state: DigestRun, status: RunStatus, error: str
         row.emailed = state.emailed
         row.telegram_sent = state.telegram_sent
         row.error = error
+        handles = {t.handle for t in (state.raw_tweets or state.filtered_tweets)}
+        if handles:
+            row.account_count = len(handles)
         session.add(row)
         session.commit()
 
@@ -212,6 +267,7 @@ def run(max_accounts: int | None = None) -> DigestRun:
     ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
 
     run_id = _create_run_row()
+    _record_params(run_id, app_settings, source_run_id=None)
     state = DigestRun(run_id=run_id)
     logger.info("=== Digest run %s started at %s ===", run_id, datetime.now(timezone.utc).isoformat())
 
@@ -280,6 +336,69 @@ def resume(run_id: int | None = None) -> DigestRun | None:
         state.error = str(e)
         _finish_run_row(run_id, state, RunStatus.failed, str(e))
         logger.exception("Resumed run %s failed", run_id)
+        raise
+
+    return state
+
+
+def _load_replay_state(source_run_id: int) -> DigestRun | None:
+    """Load a source run's post-filter/threaded tweets for replay (pre-clustering).
+
+    Returns a DigestRun whose `filtered_tweets` are ready to re-cluster + summarize + report,
+    or None if no reusable snapshot exists. Threading is NOT re-run (we reuse the captured set).
+    """
+    import json
+    from pathlib import Path
+
+    run_dir = Path(settings.data_dir) / "runs" / str(source_run_id)
+    for label in ("2a_threaded", "2_filtered"):
+        snap = run_dir / f"{label}.json"
+        if snap.is_file():
+            return DigestRun.from_dict(json.loads(snap.read_text()))
+    return None
+
+
+def is_replayable(source_run_id: int) -> bool:
+    return _load_replay_state(source_run_id) is not None
+
+
+def replay(source_run_id: int, overrides: dict | None = None, deliver: bool = False) -> DigestRun:
+    """Re-run a past run's captured tweets through clustering+summarize+report — no re-scrape.
+
+    Creates a NEW run linked to the source via source_run_id. `overrides` may set digest_style,
+    clustering_method, ollama_model, similarity_threshold, and topics_override. Delivery
+    (email/Telegram) is off unless `deliver` is True.
+    """
+    src = _load_replay_state(source_run_id)
+    if src is None:
+        raise RuntimeError(
+            f"Run {source_run_id} has no reusable snapshot to replay (it may be too old or "
+            "its snapshots were deleted)."
+        )
+
+    overrides = dict(overrides or {})
+    overrides["deliver"] = deliver
+    app_settings = _load_app_settings(overrides)
+    ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
+
+    run_id = _create_run_row()
+    _record_params(run_id, app_settings, source_run_id=source_run_id)
+    state = DigestRun(run_id=run_id)
+    state.filtered_tweets = src.filtered_tweets
+    logger.info("=== Replay run %s (from #%s): %d tweets, style=%s ===",
+                run_id, source_run_id, len(state.filtered_tweets), app_settings.digest_style.value)
+
+    try:
+        # Start after threading: re-cluster (if applicable) + summarize + report only.
+        _run_stages(ctx, state, start_after="2a_threaded")
+        # No _persist_tweets: the source run already recorded these for cross-day dedup.
+        _finish_run_row(run_id, state, RunStatus.success, None)
+        logger.info("=== Replay run %s succeeded: %d themes -> %s ===",
+                    run_id, len(state.themes), state.digest_path)
+    except Exception as e:
+        state.error = str(e)
+        _finish_run_row(run_id, state, RunStatus.failed, str(e))
+        logger.exception("Replay run %s failed", run_id)
         raise
 
     return state

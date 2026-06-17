@@ -75,8 +75,11 @@ Open the printed HTML file in a browser to see your themed digest.
 - **Settings** — schedule, time window, retweets, **thread stitching**, exclude-keywords, model,
   max themes, topics, **digest style** (themed / per-account / highlights), and **clustering**
   (LLM one-prompt vs. embedding-based with `nomic-embed-text` + similarity threshold).
-- **Runs** — history with status; *View* a past digest, **Resume** a failed run (re-runs the
-  remaining stages from the saved scrape), or **Delete** a run and all its data.
+- **Runs** — history with status; *View* a past digest, **Resume** a failed run, or **Delete** a
+  run and all its data. Click a run's **#id** for its detail page (what it did — style, model,
+  clustering, accounts, theme titles) and a **Re-run** form: regenerate it with no re-scrape, with
+  a different digest style / clustering / model / topics. Re-runs are new entries linked to the
+  source; delivery stays off unless you tick "Also email / Telegram".
 
 ## Daily schedule + email
 The scheduler runs inside `serve` — keep that process alive and it fires the digest daily at the

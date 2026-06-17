@@ -107,6 +107,16 @@ class DigestRun(SQLModel, table=True):
     telegram_sent: bool = False
     error: Optional[str] = None
 
+    # What this run did (recorded going forward; older runs are NULL).
+    source_run_id: Optional[int] = None   # set when this run is a replay of another
+    digest_style: Optional[str] = None
+    clustering_method: Optional[str] = None
+    ollama_model: Optional[str] = None
+    time_window_hours: Optional[int] = None
+    max_themes: Optional[int] = None
+    topics: Optional[str] = None          # comma-joined topics used
+    account_count: Optional[int] = None   # distinct accounts captured
+
 
 class RawTweet(SQLModel, table=True):
     """Append-only archive of EVERY tweet the collector captured (pre-filter), for analysis.

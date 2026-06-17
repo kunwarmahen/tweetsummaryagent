@@ -88,6 +88,23 @@ Playwright login or a copied profile can't reproduce that key and gets flagged b
   are a one-file fix. Cookies expire periodically → rerun `import-profile`.
 - `main.py login` remains as a manual, headed login fallback.
 
+## Runs, replay & history
+
+Every run snapshots its state per stage to `data/runs/{id}/` and records its **parameters** on the
+`digest_runs` row (style, clustering, model, time window, topics, account count, and — for a
+replay — the `source_run_id`). The UI exposes this:
+
+- **Runs list** — each run links to a detail page; replays are marked.
+- **Run detail** (`/runs/{id}`) — shows what the run did (params, theme titles/summaries from the
+  `3_summarized` snapshot, accounts captured, delivery), the digest, and a **re-run form**.
+- **Re-run (replay)** — `replay()` reloads the source run's post-thread snapshot (`2a_threaded` /
+  `2_filtered`) and re-runs **clustering → summarize → report** with chosen overrides
+  (digest style, clustering method, model, topics). It **does not re-scrape, re-filter, or
+  re-persist** (so cross-day dedup can't blank it), creates a **new run** linked via
+  `source_run_id`, and leaves delivery **off** unless you opt in. Per-run overrides ride on a
+  detached settings namespace (`_to_namespace`) so transient flags like `topics_override`/`deliver`
+  don't touch the DB. Failed runs can still be **resumed** from their furthest snapshot.
+
 ## Data model (SQLite via SQLModel)
 
 | Table | Purpose |

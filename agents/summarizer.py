@@ -271,6 +271,11 @@ class Summarizer(Agent):
         return state
 
     def _topics(self) -> list[str]:
+        # A per-run override (set by a replay) takes precedence over the global Topic table.
+        override = getattr(self.ctx.app_settings, "topics_override", None)
+        if override is not None:
+            return override
+
         from sqlmodel import select
 
         from db.models import Topic
