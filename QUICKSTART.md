@@ -124,8 +124,9 @@ Delivery shows as ✉️/📨 icons in the **Runs** table.
 ```bash
 ./venv/bin/python main.py import-profile   # on the host — creates auth/storage_state.json
 cp .env.example .env                         # optional: SMTP / Telegram
-./run-podman.sh                              # build + run; UI at http://localhost:8000
+./run-podman.sh                              # build + run; UI at http://localhost:8765
 #  …or via the launcher menu:  ./run.sh deploy   (and ./run.sh logs to tail it)
+#  change the port:  APP_PORT=9000 ./run-podman.sh
 ```
 The container reuses the mounted `auth/` session (no login inside the container) and reaches
 Ollama on the host via host networking. Re-run `import-profile` on the host when the session

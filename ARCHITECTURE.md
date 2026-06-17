@@ -227,5 +227,7 @@ imports cookies itself:
   running as root the launcher adds `--no-sandbox`/`--disable-dev-shm-usage` for Chromium.
 - `data/` is mounted read-write (DB, snapshots, digests).
 - **Host networking** lets the container reach Ollama at `localhost:11434` and serves the UI on
-  host `:8000`. See `docker-compose.yml` and `run-podman.sh` (the latter also reachable as
-  `./run.sh deploy`; `./run.sh logs` tails the container).
+  host `:8765` by default (set via `APP_PORT`; chosen to avoid the common `:8000` clash). Bind
+  host/port come from `APP_HOST`/`APP_PORT` (env), with an explicit `serve --port` overriding. See
+  `docker-compose.yml` and `run-podman.sh` (the latter also reachable as `./run.sh deploy`;
+  `./run.sh logs` tails the container).

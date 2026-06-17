@@ -7,6 +7,7 @@ Commands:
   serve     Start the web UI + in-process scheduler.                  (Phase 4/5)
 """
 import argparse
+import os
 import sys
 
 
@@ -324,8 +325,10 @@ def build_parser() -> argparse.ArgumentParser:
     trends_p.set_defaults(func=cmd_trends_rebuild)
 
     serve = sub.add_parser("serve", help="Start the web UI + scheduler")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8000)
+    # Defaults come from APP_HOST/APP_PORT env (so the container/.env can set them without code
+    # changes); an explicit --host/--port still wins.
+    serve.add_argument("--host", default=os.environ.get("APP_HOST", "127.0.0.1"))
+    serve.add_argument("--port", type=int, default=int(os.environ.get("APP_PORT", "8000")))
     serve.set_defaults(func=cmd_serve)
 
     return parser

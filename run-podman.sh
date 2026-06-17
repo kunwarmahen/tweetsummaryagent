@@ -17,20 +17,26 @@ if [[ ! -f auth/storage_state.json ]]; then
 fi
 
 IMAGE=twitter-summary-agent
+# UI port — override by exporting APP_PORT before running (e.g. APP_PORT=9000 ./run-podman.sh).
+# Default 8765 avoids the common 8000 clash. Host networking, so this is the host port directly.
+APP_PORT="${APP_PORT:-8765}"
+
 echo "Building $IMAGE…"
 podman build -t "$IMAGE" .
 
-echo "Starting container (host networking)…"
+echo "Starting container (host networking, port $APP_PORT)…"
 podman run -d --replace --name "$IMAGE" \
   --network=host \
   --env-file .env \
   -e OLLAMA_URL=http://localhost:11434 \
+  -e APP_HOST=0.0.0.0 \
+  -e APP_PORT="$APP_PORT" \
   -v "$(pwd)/data:/app/data:Z" \
   -v "$(pwd)/auth:/app/auth:ro,Z" \
   --restart unless-stopped \
   "$IMAGE"
 
-echo "Up. Web UI: http://localhost:8000"
+echo "Up. Web UI: http://localhost:$APP_PORT"
 echo "Logs:        podman logs -f $IMAGE"
 echo "Run once:    podman exec $IMAGE python main.py run"
 echo "Stop:        podman stop $IMAGE"

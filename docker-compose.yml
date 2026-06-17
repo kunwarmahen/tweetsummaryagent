@@ -1,6 +1,6 @@
 # Works with `podman-compose up` or `docker compose up`.
 # Uses host networking so the container can reach Ollama on the host at localhost:11434
-# and the UI is available at http://localhost:8000.
+# and the UI is available at http://localhost:8765 (set APP_PORT to change it).
 services:
   agent:
     build: .
@@ -10,6 +10,8 @@ services:
     env_file: .env
     environment:
       - OLLAMA_URL=http://localhost:11434
+      - APP_HOST=0.0.0.0
+      - APP_PORT=${APP_PORT:-8765}   # UI port; avoids the common 8000 clash
     volumes:
       - ./data:/app/data:Z          # DB, run snapshots, saved digests (read-write)
       - ./auth:/app/auth:ro,Z       # session imported on the host (read-only)

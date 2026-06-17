@@ -128,7 +128,8 @@ The container runs the UI + scheduler and reuses the session you import on the h
 ```bash
 python main.py import-profile     # on the host — creates auth/storage_state.json
 cp .env.example .env              # optional: SMTP / Telegram
-./run-podman.sh                   # build + run; UI at http://localhost:8000
+./run-podman.sh                   # build + run; UI at http://localhost:8765
+# change the port: APP_PORT=9000 ./run-podman.sh
 # or: ./run.sh deploy        (launcher shortcut for the same script)
 # or: podman-compose up -d   (docker compose up -d)
 ```

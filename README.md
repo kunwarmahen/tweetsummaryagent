@@ -73,7 +73,7 @@ cp .env.example .env                           # set SMTP / Telegram if wanted
 
 # Then build + run with Podman:
 ./run-podman.sh             # or: ./run.sh deploy   (same thing, via the launcher menu)
-# → UI at http://localhost:8000
+# → UI at http://localhost:8765   (set APP_PORT=… to change it)
 
 # Or with compose (podman-compose or docker compose):
 podman-compose up -d        # docker compose up -d
