@@ -218,13 +218,16 @@ twitter_summary_agent/
 
 ## Containerization (Podman / Docker)
 
-`Dockerfile` builds an image (Python 3.12 + Chromium via `playwright install --with-deps`) that
-runs `main.py serve`. The container intentionally has **no host keyring access**, so it never
-imports cookies itself:
+`Dockerfile` builds an image (Python 3.12 + **real Google Chrome** via
+`playwright install --with-deps chrome`) that runs `main.py serve`. Branded Chrome — not Chromium /
+"Chrome for Testing" — is installed on purpose: X fingerprints the testing build and flags it, and
+the collector's launcher prefers `channel="chrome"` (the same hardened path as the host). The
+container intentionally has **no host keyring access**, so it never imports cookies itself:
 
 - `import-profile` is run on the **host** (decrypts cookies → `auth/storage_state.json`).
 - `auth/` is mounted **read-only** into the container; the collector reuses that session. When
-  running as root the launcher adds `--no-sandbox`/`--disable-dev-shm-usage` for Chromium.
+  running as root the launcher adds `--no-sandbox`/`--disable-dev-shm-usage` (Chrome refuses to
+  run as root otherwise).
 - `data/` is mounted read-write (DB, snapshots, digests).
 - **Host networking** lets the container reach Ollama at `localhost:11434` and serves the UI on
   host `:8765` by default (set via `APP_PORT`; chosen to avoid the common `:8000` clash). Bind

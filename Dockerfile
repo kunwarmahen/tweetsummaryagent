@@ -12,10 +12,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install Python deps + the Chromium browser with its system libraries.
+# Install Python deps + REAL Google Chrome (channel=chrome) with its system libraries.
+# We deliberately install branded Chrome, not Chromium / "Chrome for Testing": X fingerprints
+# the testing build and flags it, and the collector's launcher prefers channel="chrome" anyway
+# (same hardened path as the host).
 COPY requirements.txt .
 RUN pip install -r requirements.txt \
-    && python -m playwright install --with-deps chromium
+    && python -m playwright install --with-deps chrome
 
 # App source (data/, auth/, venv/ are excluded via .dockerignore).
 COPY . .
