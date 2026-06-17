@@ -84,6 +84,18 @@ Keep Ollama running on the host with the models pulled. Re-run `import-profile` 
 when the X session expires; the read-only `auth/` mount picks it up. Follow logs with
 `./run.sh logs`; one-off run: `podman exec twitter-summary-agent python main.py run`.
 
+**Data lives separately from the project.** The container keeps its own DB, run snapshots, and
+digests in `~/.local/share/twitter-summary-agent` (override with `TSA_DATA_DIR`), so it never
+writes the same SQLite file as a host `serve`. It starts empty (schema auto-created). Check auth
+with `podman exec twitter-summary-agent python main.py collect --max-accounts 2`. To seed it from
+your own data later, stop the container and copy your data in:
+
+```bash
+podman stop twitter-summary-agent
+cp -a data/. ~/.local/share/twitter-summary-agent/    # carries config + runs + archive
+./run-podman.sh
+```
+
 > **Launcher:** `./run.sh` is an interactive menu (and pass-through) for every `main.py`
 > command plus container ops — `./run.sh deploy` builds + (re)deploys, `./run.sh logs` tails
 > the container.

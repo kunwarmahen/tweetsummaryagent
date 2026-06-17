@@ -228,7 +228,11 @@ container intentionally has **no host keyring access**, so it never imports cook
 - `auth/` is mounted **read-only** into the container; the collector reuses that session. When
   running as root the launcher adds `--no-sandbox`/`--disable-dev-shm-usage` (Chrome refuses to
   run as root otherwise).
-- `data/` is mounted read-write (DB, snapshots, digests).
+- The container keeps its **own** data store (DB, snapshots, digests) mounted read-write — by
+  default `~/.local/share/twitter-summary-agent` (override `TSA_DATA_DIR`; same default for
+  `run-podman.sh` and compose), deliberately **separate from the project's `./data`** so a host
+  `serve` and the container never write the same SQLite file. It starts empty (schema auto-created); seed it
+  later by stopping the container and copying `./data` into that dir.
 - **Host networking** lets the container reach Ollama at `localhost:11434` and serves the UI on
   host `:8765` by default (set via `APP_PORT`; chosen to avoid the common `:8000` clash). Bind
   host/port come from `APP_HOST`/`APP_PORT` (env), with an explicit `serve --port` overriding. See

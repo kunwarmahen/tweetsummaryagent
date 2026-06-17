@@ -139,6 +139,25 @@ is mounted read-only — re-run `import-profile` on the host when the session ex
 with `./run.sh logs`; one-off run inside the container:
 `podman exec twitter-summary-agent python main.py run`.
 
+**Container data is separate.** The container stores its DB, run snapshots, and digests in
+`~/.local/share/twitter-summary-agent` (override with `TSA_DATA_DIR`; same default for
+`run-podman.sh` and compose), so it never shares the host's `./data` SQLite file. It starts empty and the
+schema is created on boot. Confirm the session works inside the container with:
+
+```bash
+podman exec twitter-summary-agent python main.py collect --max-accounts 2   # logged-in? scrapes 2
+```
+
+Note: `import-profile` is **host-only** (it needs the desktop keyring); the container only ever
+*reads* the resulting `storage_state.json`, launching real Chrome headless to scrape. To seed the
+container's store from your own data later, stop it and copy your `./data` in:
+
+```bash
+podman stop twitter-summary-agent
+cp -a data/. ~/.local/share/twitter-summary-agent/    # carries config + runs + archive
+./run-podman.sh
+```
+
 The `./run.sh` launcher (interactive menu, or pass-through like `./run.sh deploy`) wraps every
 `main.py` command plus container `deploy`/`logs`.
 

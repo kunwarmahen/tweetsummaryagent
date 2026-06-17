@@ -11,6 +11,9 @@ services:
     environment:
       - OLLAMA_URL=http://localhost:11434
     volumes:
-      - ./data:/app/data:Z          # DB, run snapshots, saved digests (read-write)
+      # Container-owned data (DB, run snapshots, digests), kept separate from the project's
+      # ./data. Defaults to ~/.local/share/twitter-summary-agent (matching run-podman.sh);
+      # override by exporting TSA_DATA_DIR.
+      - ${TSA_DATA_DIR:-${HOME}/.local/share/twitter-summary-agent}:/app/data:Z
       - ./auth:/app/auth:ro,Z       # session imported on the host (read-only)
     restart: unless-stopped
