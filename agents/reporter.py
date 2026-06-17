@@ -15,10 +15,13 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from agents.base import Agent
+from agents.priority import load_important
 from config import settings
-from state import DigestRun
+from state import DigestRun, ThemeCluster
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
+
+_IMPORTANT_TITLE = "⭐ From your important accounts"
 
 
 class Reporter(Agent):
@@ -33,6 +36,9 @@ class Reporter(Agent):
 
     def run(self, state: DigestRun) -> DigestRun:
         by_id = {t.tweet_id: t for t in state.filtered_tweets}
+        important = load_important()                 # {handle_lower: color}
+        self._apply_priority(state, by_id, important)  # float + guarantee important tweets
+
         themes = [
             {
                 "title": th.title,
@@ -41,6 +47,12 @@ class Reporter(Agent):
             }
             for th in state.themes
         ]
+        # Legend = important accounts actually appearing, in display-case.
+        legend: dict[str, str] = {}
+        for th in themes:
+            for t in th["tweets"]:
+                if t.handle.lower() in important:
+                    legend[t.handle] = important[t.handle.lower()]
 
         now = datetime.now()
         html = self._env.get_template("digest.html").render(
@@ -48,6 +60,8 @@ class Reporter(Agent):
             generated_at=now.strftime("%Y-%m-%d %H:%M"),
             total_tweets=len(state.filtered_tweets),
             themes=themes,
+            vip=important,        # {handle_lower: color} for per-tweet lookup
+            legend=legend,        # {Handle: color} for the legend
         )
 
         out_dir = Path(settings.data_dir) / "digests"
@@ -66,12 +80,43 @@ class Reporter(Agent):
             subject = f"Daily X Digest — {now.strftime('%b %d')} ({len(state.themes)} themes)"
             state.emailed = self._send_email(subject, html)
             state.telegram_sent = self._send_telegram(themes, now.strftime("%A, %B %d"),
-                                                       len(state.filtered_tweets))
+                                                       len(state.filtered_tweets), important)
         elif state.themes and not deliver:
             self.log.info("Delivery disabled for this run; digest saved only")
         return state
 
-    def _send_telegram(self, themes: list[dict], date_str: str, total_tweets: int) -> bool:
+    def _apply_priority(self, state: DigestRun, by_id: dict, important: dict[str, str]) -> None:
+        """Float important-account tweets to the top, and guarantee they appear at all.
+
+        - sorts tweets within each theme so important ones lead,
+        - floats themes containing important tweets above the rest,
+        - if any important tweet didn't make it into a theme, prepends a dedicated section.
+        """
+        if not important:
+            return
+
+        def is_imp(tweet_id: str) -> bool:
+            t = by_id.get(tweet_id)
+            return bool(t and t.handle.lower() in important)
+
+        for th in state.themes:
+            th.tweet_ids.sort(key=lambda i: 0 if is_imp(i) else 1)   # stable: important first
+
+        covered = {i for th in state.themes for i in th.tweet_ids}
+        orphans = [t.tweet_id for t in state.filtered_tweets
+                   if t.handle.lower() in important and t.tweet_id not in covered]
+        if orphans:
+            state.themes.insert(0, ThemeCluster(
+                title=_IMPORTANT_TITLE,
+                summary="Tweets from accounts you marked important.",
+                tweet_ids=orphans,
+            ))
+
+        # Float themes that contain an important tweet above those that don't (stable).
+        state.themes.sort(key=lambda th: 0 if any(is_imp(i) for i in th.tweet_ids) else 1)
+
+    def _send_telegram(self, themes: list[dict], date_str: str, total_tweets: int,
+                       important: dict[str, str] | None = None) -> bool:
         from agents import telegram
 
         cfg = self.ctx.config
@@ -79,7 +124,7 @@ class Reporter(Agent):
             self.log.info("Telegram not configured; skipping")
             return False
         ok = telegram.send_digest(cfg.telegram_bot_token, cfg.telegram_chat_id,
-                                  themes, date_str, total_tweets)
+                                  themes, date_str, total_tweets, important or {})
         if ok:
             self.log.info("Sent digest to Telegram chat %s", cfg.telegram_chat_id)
         return ok

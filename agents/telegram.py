@@ -22,12 +22,25 @@ def _esc(text: str) -> str:
     return html.escape(text or "", quote=False)
 
 
-def format_messages(themes: list[dict], date_str: str, total_tweets: int) -> list[str]:
+def format_messages(themes: list[dict], date_str: str, total_tweets: int,
+                    important: dict[str, str] | None = None) -> list[str]:
     """Render themes into one or more Telegram-HTML message strings.
 
-    Each theme dict has: title, summary, tweets (list of TweetItem).
+    Each theme dict has: title, summary, tweets (list of TweetItem). Important accounts
+    (handle_lowercased keys in `important`) are marked with ⭐ since Telegram has no color.
     """
+    important = important or {}
     header = f"📰 <b>Daily X Digest</b> — {_esc(date_str)}\n{total_tweets} tweets · {len(themes)} themes"
+
+    # Legend line of important accounts actually present.
+    present = []
+    for th in themes:
+        for t in th["tweets"]:
+            if t.handle.lower() in important and t.handle not in present:
+                present.append(t.handle)
+    if present:
+        header += "\n⭐ Important: " + ", ".join(f"@{_esc(h)}" for h in present)
+
     if not themes:
         return [header + "\n\n<i>No new tweets in the selected window.</i>"]
 
@@ -36,8 +49,9 @@ def format_messages(themes: list[dict], date_str: str, total_tweets: int) -> lis
         lines = [f"\n<b>{_esc(th['title'])}</b>", _esc(th["summary"])]
         for t in th["tweets"][:5]:
             handle = _esc(t.handle)
+            star = "⭐ " if t.handle.lower() in important else ""
             link = f'<a href="{_esc(t.url)}">@{handle}</a>' if t.url else f"@{handle}"
-            lines.append(f"• {link}")
+            lines.append(f"• {star}{link}")
         blocks.append("\n".join(lines))
 
     # Pack blocks into messages under the length limit.
@@ -72,8 +86,9 @@ def send_message(token: str, chat_id: str, text: str) -> bool:
         return False
 
 
-def send_digest(token: str, chat_id: str, themes: list[dict], date_str: str, total_tweets: int) -> bool:
-    messages = format_messages(themes, date_str, total_tweets)
+def send_digest(token: str, chat_id: str, themes: list[dict], date_str: str, total_tweets: int,
+                important: dict[str, str] | None = None) -> bool:
+    messages = format_messages(themes, date_str, total_tweets, important)
     ok = True
     for msg in messages:
         if not send_message(token, chat_id, msg):

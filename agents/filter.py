@@ -31,9 +31,12 @@ class Filter(Agent):
         return set(rows)
 
     def run(self, state: DigestRun) -> DigestRun:
+        from agents.priority import load_important
+
         cutoff = datetime.now(timezone.utc) - timedelta(hours=self.ctx.app_settings.time_window_hours)
         keywords = self._exclude_keywords()
         seen = self._already_seen()
+        important = load_important()   # VIP tweets bypass the keyword filter
 
         kept: dict[str, TweetItem] = {}
         dropped_kw = dropped_dup = dropped_old = dropped_empty = 0
@@ -50,8 +53,8 @@ class Filter(Agent):
                 if created < cutoff:
                     dropped_old += 1
                     continue
-            low = t.text.lower()
-            if any(kw in low for kw in keywords):
+            is_vip = t.handle.lower() in important
+            if not is_vip and any(kw in t.text.lower() for kw in keywords):
                 dropped_kw += 1
                 continue
             kept[t.tweet_id] = t

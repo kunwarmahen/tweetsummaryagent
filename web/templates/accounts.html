@@ -2,7 +2,48 @@
 {% set active = 'accounts' %}
 {% block content %}
 <h2>Accounts</h2>
-<p class="sub">Your whole following list is scraped. Add accounts here to exclude them.</p>
+<p class="sub">Your whole following list is scraped. Mark accounts important to highlight them, or exclude them.</p>
+
+<div class="card">
+  <strong>⭐ Important accounts</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;">
+    Tweets from these are color-highlighted (with a legend), guaranteed to appear, and floated to the
+    top of the digest. Each gets its own color (auto-assigned, editable).
+  </p>
+  <form method="post" action="/accounts/important">
+    <div class="row">
+      <div><label>Handle (without @)</label><input type="text" name="handle" placeholder="someaccount" required></div>
+      <div style="flex:0;align-self:flex-end;"><button>Mark important</button></div>
+    </div>
+  </form>
+
+  {% if important %}
+  <table style="margin-top:12px;">
+    <tr><th>Handle</th><th>Color</th><th></th></tr>
+    {% for a in important %}
+    <tr>
+      <td>
+        <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:{{ a.color }};vertical-align:middle;"></span>
+        <span style="color:{{ a.color }};font-weight:600;">@{{ a.handle }}</span>
+      </td>
+      <td>
+        <form class="inline" method="post" action="/accounts/important/{{ a.id }}/color">
+          <input type="color" name="color" value="{{ a.color }}" style="width:42px;height:28px;padding:0;border:1px solid #cfd9de;border-radius:6px;vertical-align:middle;">
+          <button class="btn-sm btn-ghost">Set</button>
+        </form>
+      </td>
+      <td style="text-align:right;">
+        <form class="inline" method="post" action="/accounts/important/{{ a.id }}/unset">
+          <button class="btn-sm btn-danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted" style="margin-top:10px;">No important accounts yet.</p>
+  {% endif %}
+</div>
 
 <div class="card">
   <strong>Exclude an account</strong>
@@ -94,6 +135,12 @@
       <td>@{{ handle }}</td>
       <td class="muted">{{ n }}</td>
       <td style="text-align:right;white-space:nowrap;">
+        {% if handle.lower() not in important_handles %}
+        <form class="inline" method="post" action="/accounts/important">
+          <input type="hidden" name="handle" value="{{ handle }}">
+          <button class="btn-sm btn-ghost" title="Highlight @{{ handle }} in the digest">★ Important</button>
+        </form>
+        {% else %}<span class="muted" style="font-size:12px;">★ important</span>{% endif %}
         <form class="inline" method="post" action="/accounts/limit">
           <input type="hidden" name="handle" value="{{ handle }}">
           <input type="number" name="max_tweets" min="1" value="{{ default_max }}"

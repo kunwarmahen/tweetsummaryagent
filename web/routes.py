@@ -120,9 +120,13 @@ def accounts(request: Request):
             .group_by(Tweet.handle).order_by(func.count(Tweet.id).desc())
         ).all()
     seen = [(h, n) for (h, n) in seen if h.lower() not in excluded_handles]
+    important = [l for l in limits if l.important]
+    important_handles = {l.handle.lower() for l in important}
+    from agents.priority import PALETTE
     return templates.TemplateResponse(request, "accounts.html", {
         "excluded": excluded, "seen": seen,
         "limits": limits, "default_max": default_max,
+        "important": important, "important_handles": important_handles, "palette": PALETTE,
     })
 
 
@@ -148,6 +152,47 @@ def remove_account_limit(limit_id: int):
         row = s.get(AccountSetting, limit_id)
         if row:
             s.delete(row)
+            s.commit()
+    return RedirectResponse("/accounts", status_code=303)
+
+
+@router.post("/accounts/important")
+def mark_important(handle: str = Form(...)):
+    from agents.priority import pick_color
+    handle = handle.strip().lstrip("@")
+    if handle:
+        with get_session() as s:
+            rows = s.exec(select(AccountSetting)).all()
+            used = [r.color for r in rows if r.important and r.color]
+            row = next((r for r in rows if r.handle.lower() == handle.lower()), None)
+            if row is None:
+                row = AccountSetting(handle=handle, max_tweets=get_settings(s).max_tweets_per_account)
+            if not row.important:
+                row.important = True
+                row.color = row.color or pick_color(used)
+            s.add(row)
+            s.commit()
+    return RedirectResponse("/accounts", status_code=303)
+
+
+@router.post("/accounts/important/{acc_id}/color")
+def set_important_color(acc_id: int, color: str = Form(...)):
+    with get_session() as s:
+        row = s.get(AccountSetting, acc_id)
+        if row and color.strip():
+            row.color = color.strip()
+            s.add(row)
+            s.commit()
+    return RedirectResponse("/accounts", status_code=303)
+
+
+@router.post("/accounts/important/{acc_id}/unset")
+def unset_important(acc_id: int):
+    with get_session() as s:
+        row = s.get(AccountSetting, acc_id)
+        if row:
+            row.important = False
+            s.add(row)
             s.commit()
     return RedirectResponse("/accounts", status_code=303)
 

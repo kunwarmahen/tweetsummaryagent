@@ -49,7 +49,7 @@ Collector ─► Filter ─► [Threader] ─► [Clusterer] ─► Summarizer �
 > Posts tab.
 | **Clusterer** *(optional)* | Themed + embedding mode only. Embeds each tweet (`nomic-embed-text`), greedily groups by cosine similarity (pure-Python, no numpy) against running centroids, caps to `max_themes`. Produces tweet groups for the Summarizer to title. |
 | **Summarizer** | Branches on `digest_style`. `themed`: one `gemma4:e4b` prompt clusters + narrates (index-referenced), or summarizes pre-made embedding clusters. `per_account`: one summary per account (most active first, capped). `highlights`: top tweets by engagement, one line each. |
-| **Reporter** | Resolve theme tweet-IDs to full tweets, render the newsletter (`web/templates/digest.html`), save the HTML to `data/digests/`, and deliver: email via SMTP (STARTTLS) and Telegram (`agents/telegram.py`, compact themed message auto-split under 4096 chars) — each gated on its creds being set and themes non-empty. |
+| **Reporter** | Resolve theme tweet-IDs to full tweets, apply **important-account** highlighting (`agents/priority.py`: float VIP tweets to the top within/across themes, guarantee orphaned VIP tweets via a synthetic "⭐" section, pass colors + legend to the template), render the newsletter (`web/templates/digest.html`), save to `data/digests/`, and deliver: email via SMTP (STARTTLS) and Telegram (auto-split, VIPs ⭐-marked) — each gated on creds + themes + the `deliver` flag. |
 
 ## Run lifecycle, snapshots & recovery
 
@@ -111,7 +111,7 @@ replay — the `source_run_id`). The UI exposes this:
 |-------|---------|
 | `settings` | Schedule, Ollama model, digest style, time-window, max tweets/themes, include-retweets, exclude-keywords, thread stitching (+ gap), clustering method + embedding model + similarity threshold. |
 | `excluded_accounts` | Handles to skip when scraping the following list (the blocklist). |
-| `account_settings` | Per-account overrides keyed by handle — currently `max_tweets` (falls back to `settings.max_tweets_per_account`). |
+| `account_settings` | Per-account overrides keyed by handle — `max_tweets` (falls back to `settings.max_tweets_per_account`), plus `important` + highlight `color` for VIP accounts. |
 | `topics` | Optional themes to bias/filter toward. |
 | `digest_runs` | Run history: timestamp, status, tweet count, error — shown in the UI. |
 | `tweets` | Per-run cache of **digested** tweets; enables cross-day dedup and digest archives. |
@@ -136,6 +136,7 @@ twitter_summary_agent/
 │   │                            #   per-account tweet limits)
 │   ├── filter.py                # keyword / window / dedup
 │   ├── threader.py              # stitch rapid self-reply threads (optional)
+│   ├── priority.py              # important-account colors + lookups
 │   ├── clusterer.py             # embedding-based clustering (optional mode)
 │   ├── summarizer.py            # Ollama summary — themed / per-account / highlights
 │   ├── reporter.py              # render + save + email (SMTP) + Telegram

@@ -44,6 +44,10 @@ _MIGRATIONS = {
         "thread_mode": "VARCHAR DEFAULT 'reply'",
         "thread_gap_minutes": "INTEGER DEFAULT 10",
     },
+    "account_settings": {
+        "important": "BOOLEAN DEFAULT 0",
+        "color": "VARCHAR",
+    },
 }
 
 

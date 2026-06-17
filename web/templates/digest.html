@@ -16,6 +16,20 @@
         </p>
       </div>
 
+      {% if legend %}
+      <div style="padding:14px 28px 0;">
+        <div style="font-size:12px;color:#536471;margin-bottom:6px;font-weight:600;">⭐ Important accounts</div>
+        <div>
+          {% for handle, color in legend.items() %}
+          <span style="display:inline-block;margin:0 12px 6px 0;font-size:12px;white-space:nowrap;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ color }};vertical-align:middle;"></span>
+            <span style="color:{{ color }};font-weight:600;vertical-align:middle;">@{{ handle }}</span>
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
       <div style="padding:8px 28px 28px;">
         {% if not themes %}
           <p style="color:#536471;font-size:15px;padding-top:16px;">
@@ -24,13 +38,15 @@
         {% endif %}
 
         {% for theme in themes %}
+        {% set tc = vip.get(theme.title[1:]|lower) if theme.title.startswith('@') else None %}
         <div style="padding:22px 0;border-bottom:1px solid #eff3f4;">
-          <h2 style="margin:0 0 8px;font-size:18px;color:#0f1419;">{{ theme.title }}</h2>
+          <h2 style="margin:0 0 8px;font-size:18px;color:{{ tc or '#0f1419' }};">{% if tc %}⭐ {% endif %}{{ theme.title }}</h2>
           <p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#243340;">{{ theme.summary }}</p>
 
           {% for t in theme.tweets %}
-          <div style="margin:10px 0;padding:10px 14px;background:#f7f9f9;border-left:3px solid #1d9bf0;border-radius:6px;">
-            <a href="{{ t.url }}" style="color:#1d9bf0;text-decoration:none;font-weight:600;font-size:13px;">@{{ t.handle }}</a>
+          {% set c = vip.get(t.handle|lower) %}
+          <div style="margin:10px 0;padding:10px 14px;background:{{ (c ~ '14') if c else '#f7f9f9' }};border-left:{{ '4px' if c else '3px' }} solid {{ c or '#1d9bf0' }};border-radius:6px;">
+            <a href="{{ t.url }}" style="color:{{ c or '#1d9bf0' }};text-decoration:none;font-weight:600;font-size:13px;">{% if c %}⭐ {% endif %}@{{ t.handle }}</a>
             <span style="color:#8899a6;font-size:12px;">&middot; {{ t.likes }} likes &middot; {{ t.retweets }} reposts</span>
             <p style="margin:6px 0 0;font-size:14px;line-height:1.45;color:#3a4a57;">{{ t.text }}</p>
           </div>

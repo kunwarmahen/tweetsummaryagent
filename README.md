@@ -21,6 +21,7 @@ can be replayed or debugged without re-scraping.
 - 🧩 **Two clustering modes** — one-prompt LLM grouping, or embedding-based clustering (`nomic-embed-text`).
 - 🧵 **Thread stitching** — merges an author's rapid self-replies into one item before summarizing.
 - ♻️ **Re-run any past run** — replay captured tweets (no re-scrape) with a different style, clustering, model, or topics; per-run detail page shows what each run did.
+- ⭐ **Important accounts** — mark VIP accounts to color-highlight their tweets (with a legend), guarantee they appear, and float them to the top; ⭐-marked in Telegram.
 - 🎚️ **Per-account tweet limits** — cap how many tweets to capture for specific accounts (others use the global default).
 - 📧 **Email + Telegram + saved HTML** delivery.
 - ⚙️ **Web config UI** (FastAPI + HTML) backed by **SQLite**.

@@ -72,6 +72,8 @@ Open the printed HTML file in a browser to see your themed digest.
 - **Dashboard** — stats (archived vs digested tweet counts), current config, "Run now".
 - **Accounts** — exclude accounts from scraping, and set a **per-account tweet limit** (any handle,
   or one of the recently-seen accounts); accounts without an override use the global default.
+  Mark accounts **★ Important** to color-highlight their tweets (legend included), guarantee they
+  appear, and float them to the top of the digest; each gets its own auto-assigned (editable) color.
 - **Settings** — schedule, time window, retweets, **thread stitching**, exclude-keywords, model,
   max themes, topics, **digest style** (themed / per-account / highlights), and **clustering**
   (LLM one-prompt vs. embedding-based with `nomic-embed-text` + similarity threshold).

@@ -73,13 +73,15 @@ class ExcludedAccount(SQLModel, table=True):
 
 
 class AccountSetting(SQLModel, table=True):
-    """Per-account overrides keyed by handle. Currently just the tweet capture limit;
-    accounts without a row fall back to AppSettings.max_tweets_per_account."""
+    """Per-account overrides keyed by handle: tweet capture limit, and "important" status
+    with a highlight color. Accounts without a row fall back to global defaults."""
     __tablename__ = "account_settings"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     handle: str = Field(index=True, unique=True)   # without leading '@'
     max_tweets: int = 50
+    important: bool = False           # VIP — highlighted + guaranteed in the digest
+    color: Optional[str] = None       # hex highlight color (auto-assigned when marked important)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
