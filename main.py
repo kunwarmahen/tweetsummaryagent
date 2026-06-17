@@ -130,6 +130,23 @@ def cmd_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_delete_run(args: argparse.Namespace) -> int:
+    import logging
+
+    import pipeline
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    summary = pipeline.delete_run(args.run_id)
+    if summary is None:
+        print(f"Run {args.run_id} not found.")
+        return 1
+    print(f"Deleted run {summary['run_id']}: {summary['tweets']} digested tweets, "
+          f"{summary['raw_tweets']} raw tweets, "
+          f"digest {'removed' if summary['digest_deleted'] else 'none'}, "
+          f"snapshots {'removed' if summary['snapshots_deleted'] else 'none'}.")
+    return 0
+
+
 def cmd_archive_backfill(_args: argparse.Namespace) -> int:
     import logging
 
@@ -190,6 +207,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("archive-backfill",
                    help="Import past 1_collected snapshots into the raw tweet archive (one-time)"
                    ).set_defaults(func=cmd_archive_backfill)
+
+    del_p = sub.add_parser("delete-run", help="Delete a run and all its data (tweets, archive, files)")
+    del_p.add_argument("run_id", type=int, help="Run id to delete")
+    del_p.set_defaults(func=cmd_delete_run)
 
     serve = sub.add_parser("serve", help="Start the web UI + scheduler")
     serve.add_argument("--host", default="127.0.0.1")

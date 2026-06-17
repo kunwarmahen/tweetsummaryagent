@@ -17,7 +17,8 @@ A single FastAPI process does everything:
 - Hosts **APScheduler** (started in the FastAPI lifespan) which fires the daily pipeline.
 - Exposes a **"Run now"** action that triggers the same pipeline on demand.
 
-The CLI (`main.py`) can also run any piece headlessly (`init-db`, `login`, `run`, `serve`).
+The CLI (`main.py`) can also run any piece headlessly (`init-db`, `login`, `run`, `resume`,
+`delete-run`, `archive-backfill`, `serve`).
 
 ## Pipeline
 
@@ -50,6 +51,26 @@ Collector ─► Filter ─► [Threader] ─► [Clusterer] ─► Summarizer �
 | **Summarizer** | Branches on `digest_style`. `themed`: one `gemma4:e4b` prompt clusters + narrates (index-referenced), or summarizes pre-made embedding clusters. `per_account`: one summary per account (most active first, capped). `highlights`: top tweets by engagement, one line each. |
 | **Reporter** | Resolve theme tweet-IDs to full tweets, render the newsletter (`web/templates/digest.html`), save the HTML to `data/digests/`, and deliver: email via SMTP (STARTTLS) and Telegram (`agents/telegram.py`, compact themed message auto-split under 4096 chars) — each gated on its creds being set and themes non-empty. |
 
+## Run lifecycle, snapshots & recovery
+
+Each stage writes a snapshot to `data/runs/<run_id>/` (`1_collected`, `2_filtered`,
+`2a_threaded`, `2b_clustered`, `3_summarized`, `4_reported`). These make a run replayable and
+power three operations:
+
+- **Raw archive** — immediately after collection, every scraped tweet is appended to `raw_tweets`
+  (`pipeline._archive_raw`, idempotent by `tweet_id`). Because it runs before the filter and before
+  any later stage can fail, the scrape is never lost even if summarization crashes.
+- **Resume** (`pipeline.resume`) — loads the *furthest-along* snapshot for a run and re-runs only
+  the remaining stages, reusing the same `digest_runs` row (no re-scrape). The post-collection
+  stages are defined once (`_stage_plan`) and shared by `run()` and `resume()`. `_persist_tweets`
+  is idempotent so a resume can't double-insert. CLI `resume [id]` / UI "Resume" on failed runs.
+- **Delete** (`pipeline.delete_run`) — removes a run and *all* its data: the `digest_runs` row, its
+  `tweets` and `raw_tweets`, the saved digest HTML (only if under `data/`), and the snapshot dir.
+  Refuses while the run is in progress. CLI `delete-run <id>` / UI "Delete".
+
+`backfill_raw_archive()` (CLI `archive-backfill`) seeds `raw_tweets` from existing `1_collected`
+snapshots — a one-time historical import for DBs created before the archive existed.
+
 ## Browser collection & auth
 
 On Linux, Chrome encrypts cookies with a key held in the desktop keyring. A scripted
@@ -73,9 +94,11 @@ Playwright login or a copied profile can't reproduce that key and gets flagged b
 |-------|---------|
 | `settings` | Schedule, Ollama model, digest style, time-window, max tweets/themes, include-retweets, exclude-keywords, thread stitching (+ gap), clustering method + embedding model + similarity threshold. |
 | `excluded_accounts` | Handles to skip when scraping the following list (the blocklist). |
+| `account_settings` | Per-account overrides keyed by handle — currently `max_tweets` (falls back to `settings.max_tweets_per_account`). |
 | `topics` | Optional themes to bias/filter toward. |
 | `digest_runs` | Run history: timestamp, status, tweet count, error — shown in the UI. |
-| `tweets` | Per-run tweet cache; enables cross-day dedup and digest archives. |
+| `tweets` | Per-run cache of **digested** tweets; enables cross-day dedup and digest archives. |
+| `raw_tweets` | Append-only archive of **every** collected tweet (pre-filter), deduped by `tweet_id`; for analysis. Written right after collection, so it survives filtering and failures. |
 
 ## Directory layout
 
@@ -92,7 +115,8 @@ twitter_summary_agent/
 │   ├── base.py                  # Agent base + AgentContext
 │   ├── browser.py               # hardened launcher + import_chrome_cookies()
 │   ├── selectors.py             # ALL X DOM selectors (one-file fix point)
-│   ├── collector.py             # Playwright scrape (session check, retry/backoff, paced)
+│   ├── collector.py             # Playwright scrape (session check, retry/backoff, paced,
+│   │                            #   per-account tweet limits)
 │   ├── filter.py                # keyword / window / dedup
 │   ├── threader.py              # stitch rapid self-reply threads (optional)
 │   ├── clusterer.py             # embedding-based clustering (optional mode)
@@ -101,20 +125,24 @@ twitter_summary_agent/
 │   ├── telegram.py              # Telegram Bot API client + formatter
 │   └── util.py                  # extract_json helper
 ├── auth/login.py                # capture_handle() + manual login fallback
-├── pipeline.py                  # orchestrator, run-lock, DigestRun DB row
+├── pipeline.py                  # orchestrator, run-lock, DigestRun row; resume / delete_run /
+│                                 #   raw archive + backfill
 ├── scheduler.py                 # APScheduler (started in FastAPI lifespan)
 ├── web/
 │   ├── app.py                   # FastAPI app + lifespan starts scheduler
-│   ├── routes.py                # dashboard, accounts, settings, topics, runs, run-now, digest
+│   ├── routes.py                # dashboard, accounts (+ per-account limits), settings, topics,
+│   │                            #   runs (run-now / resume / delete), digest
 │   └── templates/               # base, index, accounts, settings, runs, digest
 ├── db/
 │   ├── models.py                # SQLModel tables + enums
 │   └── session.py               # engine, init_db, additive column migrations
-├── tests/                       # pytest suite (util, telegram, filter, threader,
-│                                #   summarizer styles, clusterer) — no network/LLM
-├── data/                        # state snapshots (runs/) + saved digests (digests/)
-└── main.py                      # CLI: init-db | import-profile | login | collect |
-                                 #      telegram-chatid | telegram-test | run | serve
+├── tests/                       # pytest suite (util, telegram, filter, threader, summarizer
+│                                #   styles, clusterer, collector, recovery, archive, delete)
+│                                #   — no network/LLM; DB tests use an in-memory engine
+├── data/                        # state snapshots (runs/) + saved digests (digests/) + agent.db
+└── main.py                      # CLI: init-db | import-profile | login | collect | run |
+                                 #      resume | delete-run | archive-backfill |
+                                 #      telegram-chatid | telegram-test | serve
 ```
 
 ## Configuration split

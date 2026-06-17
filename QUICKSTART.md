@@ -57,6 +57,9 @@ Open the printed HTML file in a browser to see your themed digest.
 | `import-profile` | Reuse your logged-in Chrome X session (decrypts cookies). |
 | `collect [--max-accounts N] [--out FILE]` | Scrape + dump tweets only (debug). |
 | `run [--max-accounts N]` | Full pipeline: scrape → filter → summarize → render digest. |
+| `resume [run_id]` | Resume a failed run from its last snapshot — no re-scrape (default: most recent failed run). |
+| `delete-run <run_id>` | Delete a run and all its data (tweets, raw archive, digest, snapshots). |
+| `archive-backfill` | One-time: import past `1_collected` snapshots into the raw tweet archive. |
 | `login` | Manual browser-login fallback (rarely needed). |
 | `telegram-chatid` | Discover your Telegram chat id (after messaging your bot). |
 | `telegram-test` | Send a Telegram test message to verify setup. |
@@ -66,12 +69,14 @@ Open the printed HTML file in a browser to see your themed digest.
 ```bash
 ./venv/bin/python main.py serve   # then open http://127.0.0.1:8000
 ```
-- **Dashboard** — stats, current config, "Run now".
-- **Accounts** — exclude accounts from scraping (add a handle, or exclude any recently-seen one).
+- **Dashboard** — stats (archived vs digested tweet counts), current config, "Run now".
+- **Accounts** — exclude accounts from scraping, and set a **per-account tweet limit** (any handle,
+  or one of the recently-seen accounts); accounts without an override use the global default.
 - **Settings** — schedule, time window, retweets, **thread stitching**, exclude-keywords, model,
   max themes, topics, **digest style** (themed / per-account / highlights), and **clustering**
   (LLM one-prompt vs. embedding-based with `nomic-embed-text` + similarity threshold).
-- **Runs** — history with status; click *View* to see a past digest.
+- **Runs** — history with status; *View* a past digest, **Resume** a failed run (re-runs the
+  remaining stages from the saved scrape), or **Delete** a run and all its data.
 
 ## Daily schedule + email
 The scheduler runs inside `serve` — keep that process alive and it fires the digest daily at the

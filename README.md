@@ -20,9 +20,13 @@ can be replayed or debugged without re-scraping.
 - 📰 **Three digest styles** — themed newsletter, per-account summaries, or ranked highlights.
 - 🧩 **Two clustering modes** — one-prompt LLM grouping, or embedding-based clustering (`nomic-embed-text`).
 - 🧵 **Thread stitching** — merges an author's rapid self-replies into one item before summarizing.
+- 🎚️ **Per-account tweet limits** — cap how many tweets to capture for specific accounts (others use the global default).
 - 📧 **Email + Telegram + saved HTML** delivery.
 - ⚙️ **Web config UI** (FastAPI + HTML) backed by **SQLite**.
 - ⏰ **Built-in daily scheduler** (APScheduler, in-process).
+- 🔁 **Crash-resilient runs** — every stage is snapshotted, so a run that fails after scraping can be **resumed** without re-scraping.
+- 🗄️ **Raw tweet archive** — every collected tweet (pre-filter) is stored for later analysis, surviving filtering and failures.
+- 🗑️ **Run management** — delete a run and all of its data (tweets, archive rows, digest, snapshots) from the CLI or UI.
 
 ## Quick start
 
@@ -84,7 +88,9 @@ pip install -e ".[dev]"
 pytest -q
 ```
 Unit tests cover the JSON parser, Telegram formatter/chunking, filter, thread stitcher,
-summarizer styles, and embedding clusterer — no network or LLM calls (all mocked).
+summarizer styles (incl. malformed-index hardening), embedding clusterer, per-account limit
+resolution, snapshot round-trip / resume planning, the raw archive, and run deletion — no
+network or LLM calls (all mocked; DB-touching tests use an isolated in-memory engine).
 
 ## Documentation
 

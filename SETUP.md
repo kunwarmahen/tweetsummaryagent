@@ -86,14 +86,32 @@ python main.py serve
 # open http://localhost:8000
 ```
 
+## Recovery & data management
+
+Every stage of a run is snapshotted to `data/runs/<id>/`, so failures are recoverable and data
+is durable:
+
+```bash
+python main.py resume                # resume the most recent failed run (no re-scrape)
+python main.py resume 7              # resume a specific run
+python main.py delete-run 7          # delete a run and ALL its data (tweets, archive, files)
+python main.py archive-backfill      # one-time: seed the raw archive from existing snapshots
+```
+
+Every collected tweet (pre-filter) is also stored in the `raw_tweets` archive for later analysis;
+it survives filtering and pipeline failures. SQLite handles this comfortably at typical volume
+(~60 MB/year).
+
 ## In the UI
 
-- **Dashboard** — stats, current config, "Run now".
-- **Accounts** — exclude accounts from scraping (add a handle, or exclude any recently-seen one).
+- **Dashboard** — stats (archived vs digested tweets), current config, "Run now".
+- **Accounts** — exclude accounts from scraping, and set a **per-account tweet limit** (any handle
+  or a recently-seen one); accounts without an override use the global default.
 - **Settings** — schedule, time window, retweets, thread stitching, exclude-keywords, model,
   max themes, topics, digest style (themed / per-account / highlights), and clustering
   (LLM one-prompt vs. embedding-based + similarity threshold).
-- **Runs** — history with status and ✉️/📨 delivery icons; *View* opens a past digest.
+- **Runs** — history with status and ✉️/📨 delivery icons; *View* a past digest, **Resume** a
+  failed run (re-runs the remaining stages from the saved scrape), or **Delete** a run + its data.
 
 ## Run in a container (Podman / Docker)
 

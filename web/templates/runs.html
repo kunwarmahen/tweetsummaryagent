@@ -14,7 +14,7 @@
 <div class="card">
   {% if runs %}
   <table>
-    <tr><th>#</th><th>Status</th><th>Started (UTC)</th><th>Tweets</th><th>Themes</th><th>Delivered</th><th>Digest</th></tr>
+    <tr><th>#</th><th>Status</th><th>Started (UTC)</th><th>Tweets</th><th>Themes</th><th>Delivered</th><th>Digest</th><th></th></tr>
     {% for r in runs %}
     <tr>
       <td>{{ r.id }}</td>
@@ -35,9 +35,15 @@
           </form>
         {% else %}<span class="muted">—</span>{% endif %}
       </td>
+      <td style="text-align:right;">
+        <form class="inline" method="post" action="/runs/{{ r.id }}/delete"
+              onsubmit="return confirm('Delete run #{{ r.id }} and all its data (tweets, raw archive, digest, snapshots)? This cannot be undone.');">
+          <button class="btn-sm btn-danger" {% if r.status.value == 'running' %}disabled{% endif %}>Delete</button>
+        </form>
+      </td>
     </tr>
     {% if r.error %}
-    <tr><td></td><td colspan="6" class="muted" style="color:#c81e1e;">{{ r.error }}</td></tr>
+    <tr><td></td><td colspan="7" class="muted" style="color:#c81e1e;">{{ r.error }}</td></tr>
     {% endif %}
     {% endfor %}
   </table>

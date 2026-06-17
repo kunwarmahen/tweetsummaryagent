@@ -293,3 +293,50 @@ def _mark_running(run_id: int) -> None:
             row.error = None
             session.add(row)
             session.commit()
+
+
+def delete_run(run_id: int) -> dict | None:
+    """Delete a run and everything tied to it: the DB row, its digested + raw tweets, the
+    rendered digest HTML, and the snapshot directory. Returns a summary, or None if not found.
+
+    Refuses to delete a run that is currently in progress.
+    """
+    import shutil
+    from pathlib import Path
+
+    from sqlmodel import delete, select
+
+    with get_session() as session:
+        row = session.get(DigestRunRow, run_id)
+        if row is None:
+            logger.warning("delete_run: run %s not found", run_id)
+            return None
+        if row.status == RunStatus.running:
+            raise RuntimeError(f"Run {run_id} is in progress; cannot delete it.")
+        digest_path = row.digest_path
+
+        tweets = len(session.exec(select(Tweet.id).where(Tweet.run_id == run_id)).all())
+        raw = len(session.exec(select(RawTweet.id).where(RawTweet.run_id == run_id)).all())
+        session.exec(delete(Tweet).where(Tweet.run_id == run_id))
+        session.exec(delete(RawTweet).where(RawTweet.run_id == run_id))
+        session.delete(row)
+        session.commit()
+
+    # Remove on-disk artifacts (only within our data dir, to be safe).
+    data_dir = Path(settings.data_dir).resolve()
+    digest_deleted = False
+    if digest_path:
+        p = Path(digest_path).resolve()
+        if data_dir in p.parents and p.is_file():
+            p.unlink()
+            digest_deleted = True
+
+    snap_dir = data_dir / "runs" / str(run_id)
+    snapshots_deleted = snap_dir.is_dir()
+    if snapshots_deleted:
+        shutil.rmtree(snap_dir)
+
+    summary = {"run_id": run_id, "tweets": tweets, "raw_tweets": raw,
+               "digest_deleted": digest_deleted, "snapshots_deleted": snapshots_deleted}
+    logger.info("Deleted run %s: %s", run_id, summary)
+    return summary

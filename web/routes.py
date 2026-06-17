@@ -52,6 +52,15 @@ def resume_run(run_id: int, background_tasks: BackgroundTasks):
     return RedirectResponse("/runs", status_code=303)
 
 
+@router.post("/runs/{run_id}/delete")
+def delete_run(run_id: int):
+    try:
+        pipeline.delete_run(run_id)
+    except RuntimeError:
+        pass  # run in progress — ignore and refresh
+    return RedirectResponse("/runs", status_code=303)
+
+
 # ---------------------------------------------------------------- Accounts
 @router.get("/accounts", response_class=HTMLResponse)
 def accounts(request: Request):
