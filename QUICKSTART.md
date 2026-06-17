@@ -125,10 +125,14 @@ Delivery shows as ✉️/📨 icons in the **Runs** table.
 ./venv/bin/python main.py import-profile   # on the host — creates auth/storage_state.json
 cp .env.example .env                         # optional: SMTP / Telegram
 ./run-podman.sh                              # build + run; UI at http://localhost:8000
+#  …or via the launcher menu:  ./run.sh deploy   (and ./run.sh logs to tail it)
 ```
 The container reuses the mounted `auth/` session (no login inside the container) and reaches
 Ollama on the host via host networking. Re-run `import-profile` on the host when the session
 expires. One-off run: `podman exec twitter-summary-agent python main.py run`.
+
+> **Launcher:** `./run.sh` (no args) opens an interactive menu covering every command above —
+> setup, runs, the `ingest`/`process`/`deliver` phases, `reset-runs`, and container `deploy`/`logs`.
 
 ## Tests
 ```bash

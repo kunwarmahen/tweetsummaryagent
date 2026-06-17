@@ -129,12 +129,17 @@ The container runs the UI + scheduler and reuses the session you import on the h
 python main.py import-profile     # on the host — creates auth/storage_state.json
 cp .env.example .env              # optional: SMTP / Telegram
 ./run-podman.sh                   # build + run; UI at http://localhost:8000
+# or: ./run.sh deploy        (launcher shortcut for the same script)
 # or: podman-compose up -d   (docker compose up -d)
 ```
 
 Host networking lets the container reach Ollama at `localhost:11434`. The `auth/` directory
-is mounted read-only — re-run `import-profile` on the host when the session expires. One-off
-run inside the container: `podman exec twitter-summary-agent python main.py run`.
+is mounted read-only — re-run `import-profile` on the host when the session expires. Tail logs
+with `./run.sh logs`; one-off run inside the container:
+`podman exec twitter-summary-agent python main.py run`.
+
+The `./run.sh` launcher (interactive menu, or pass-through like `./run.sh deploy`) wraps every
+`main.py` command plus container `deploy`/`logs`.
 
 ## Tests
 

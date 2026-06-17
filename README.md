@@ -72,7 +72,7 @@ session on the host first (which decrypts your Chrome cookies), then mount `auth
 cp .env.example .env                           # set SMTP / Telegram if wanted
 
 # Then build + run with Podman:
-./run-podman.sh
+./run-podman.sh             # or: ./run.sh deploy   (same thing, via the launcher menu)
 # → UI at http://localhost:8000
 
 # Or with compose (podman-compose or docker compose):
@@ -81,8 +81,12 @@ podman-compose up -d        # docker compose up -d
 
 Uses **host networking** so the container reaches Ollama on the host at `localhost:11434`.
 Keep Ollama running on the host with the models pulled. Re-run `import-profile` on the host
-when the X session expires; the read-only `auth/` mount picks it up. One-off run:
-`podman exec twitter-summary-agent python main.py run`.
+when the X session expires; the read-only `auth/` mount picks it up. Follow logs with
+`./run.sh logs`; one-off run: `podman exec twitter-summary-agent python main.py run`.
+
+> **Launcher:** `./run.sh` is an interactive menu (and pass-through) for every `main.py`
+> command plus container ops — `./run.sh deploy` builds + (re)deploys, `./run.sh logs` tails
+> the container.
 
 ## Tests
 
