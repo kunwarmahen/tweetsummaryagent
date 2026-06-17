@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% set active = 'settings' %}
+{% block content %}
+<h2>Settings</h2>
+<p class="sub">Configuration is stored in the database and used by every run.</p>
+
+<form method="post" action="/settings">
+  <div class="card">
+    <strong>Schedule</strong>
+    <div class="row">
+      <div><label>Hour (0–23)</label><input type="number" name="schedule_hour" min="0" max="23" value="{{ cfg.schedule_hour }}"></div>
+      <div><label>Minute (0–59)</label><input type="number" name="schedule_minute" min="0" max="59" value="{{ cfg.schedule_minute }}"></div>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="se" name="schedule_enabled" {% if cfg.schedule_enabled %}checked{% endif %}>
+      <label for="se" style="margin:0;">Enable daily scheduled run</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>Collection</strong>
+    <div class="row">
+      <div><label>Time window (hours)</label><input type="number" name="time_window_hours" min="1" value="{{ cfg.time_window_hours }}"></div>
+      <div><label>Max tweets / account</label><input type="number" name="max_tweets_per_account" min="1" value="{{ cfg.max_tweets_per_account }}"></div>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="rt" name="include_retweets" {% if cfg.include_retweets %}checked{% endif %}>
+      <label for="rt" style="margin:0;">Include retweets / reposts</label>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="st" name="stitch_threads" {% if cfg.stitch_threads %}checked{% endif %}>
+      <label for="st" style="margin:0;">Stitch threads (merge self-replies)</label>
+    </div>
+    <div class="row">
+      <div>
+        <label>Thread detection</label>
+        <select name="thread_mode">
+          {% for m in thread_modes %}
+          <option value="{{ m }}" {% if m == cfg.thread_mode.value %}selected{% endif %}>
+            {{ 'Reply metadata (accurate)' if m == 'reply' else 'Time gap (fallback)' }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Thread gap (minutes, time mode)</label>
+        <input type="number" name="thread_gap_minutes" min="1" value="{{ cfg.thread_gap_minutes }}">
+      </div>
+    </div>
+    <label>Exclude keywords (comma-separated)</label>
+    <textarea name="exclude_keywords" placeholder="giveaway, promo code, follow back">{{ cfg.exclude_keywords }}</textarea>
+  </div>
+
+  <div class="card">
+    <strong>Summarization</strong>
+    <div class="row">
+      <div><label>Ollama model</label><input type="text" name="ollama_model" value="{{ cfg.ollama_model }}"></div>
+      <div><label>Max themes</label><input type="number" name="max_themes" min="1" value="{{ cfg.max_themes }}"></div>
+    </div>
+    <label>Digest style</label>
+    <select name="digest_style">
+      {% for st in styles %}
+      <option value="{{ st }}" {% if st == cfg.digest_style.value %}selected{% endif %}>{{ st }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="card">
+    <strong>Clustering</strong>
+    <label>Method</label>
+    <select name="clustering_method">
+      {% for m in methods %}
+      <option value="{{ m }}" {% if m == cfg.clustering_method.value %}selected{% endif %}>
+        {{ 'LLM (one prompt groups + summarizes)' if m == 'llm' else 'Embedding (embed, cluster, then summarize each)' }}
+      </option>
+      {% endfor %}
+    </select>
+    <div class="row">
+      <div><label>Embedding model</label><input type="text" name="embedding_model" value="{{ cfg.embedding_model }}"></div>
+      <div><label>Similarity threshold (0–1)</label><input type="number" step="0.05" min="0" max="1" name="similarity_threshold" value="{{ cfg.similarity_threshold }}"></div>
+    </div>
+    <p class="muted" style="margin-top:8px;font-size:13px;">
+      Embedding mode only applies when method = Embedding. Higher threshold = tighter, more themes.
+    </p>
+  </div>
+
+  <button type="submit">Save settings</button>
+</form>
+
+<div class="card" style="margin-top:24px;">
+  <strong>Topics of interest</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;">Optional — the summarizer prioritizes these themes.</p>
+  <form method="post" action="/topics/add" style="margin-top:8px;">
+    <div class="row">
+      <div><input type="text" name="name" placeholder="AI, semiconductors, macro…" required></div>
+      <div style="flex:0;"><button>Add</button></div>
+    </div>
+  </form>
+  {% if topics %}
+  <table style="margin-top:12px;">
+    {% for t in topics %}
+    <tr>
+      <td>{{ t.name }}</td>
+      <td style="text-align:right;">
+        <form class="inline" method="post" action="/topics/{{ t.id }}/delete">
+          <button class="btn-sm btn-danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted" style="margin-top:10px;">No topics set.</p>
+  {% endif %}
+</div>
+{% endblock %}

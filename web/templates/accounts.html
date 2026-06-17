@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% set active = 'accounts' %}
+{% block content %}
+<h2>Accounts</h2>
+<p class="sub">Your whole following list is scraped. Add accounts here to exclude them.</p>
+
+<div class="card">
+  <strong>Exclude an account</strong>
+  <form method="post" action="/accounts/exclude">
+    <div class="row">
+      <div>
+        <label>Handle (without @)</label>
+        <input type="text" name="handle" placeholder="someaccount" required>
+      </div>
+      <div>
+        <label>Note (optional)</label>
+        <input type="text" name="note" placeholder="too noisy">
+      </div>
+    </div>
+    <div style="margin-top:14px;"><button>Add to blocklist</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <strong>Excluded accounts ({{ excluded|length }})</strong>
+  {% if excluded %}
+  <table style="margin-top:12px;">
+    <tr><th>Handle</th><th>Note</th><th></th></tr>
+    {% for e in excluded %}
+    <tr>
+      <td>@{{ e.handle }}</td>
+      <td class="muted">{{ e.note or '' }}</td>
+      <td style="text-align:right;">
+        <form class="inline" method="post" action="/accounts/exclude/{{ e.id }}/delete">
+          <button class="btn-sm btn-danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted" style="margin-top:10px;">No accounts excluded yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <strong>Per-account tweet limit</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;">
+    Cap how many tweets to capture for a specific account. Accounts without an override use the
+    global default (<strong>{{ default_max }}</strong>, set in Settings).
+  </p>
+  <form method="post" action="/accounts/limit">
+    <div class="row">
+      <div>
+        <label>Handle (without @)</label>
+        <input type="text" name="handle" placeholder="someaccount" required>
+      </div>
+      <div>
+        <label>Max tweets</label>
+        <input type="number" name="max_tweets" min="1" value="{{ default_max }}" required>
+      </div>
+    </div>
+    <div style="margin-top:14px;"><button>Save limit</button></div>
+  </form>
+
+  {% if limits %}
+  <table style="margin-top:12px;">
+    <tr><th>Handle</th><th>Max tweets</th><th></th></tr>
+    {% for l in limits %}
+    <tr>
+      <td>@{{ l.handle }}</td>
+      <td class="muted">{{ l.max_tweets }}</td>
+      <td style="text-align:right;">
+        <form class="inline" method="post" action="/accounts/limit/{{ l.id }}/delete">
+          <button class="btn-sm btn-danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted" style="margin-top:10px;">No per-account limits — every account uses the default ({{ default_max }}).</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <strong>Recently seen accounts</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;">From past runs — exclude or set a custom tweet limit.</p>
+  {% if seen %}
+  <table style="margin-top:8px;">
+    <tr><th>Handle</th><th>Tweets collected</th><th></th></tr>
+    {% for handle, n in seen %}
+    <tr>
+      <td>@{{ handle }}</td>
+      <td class="muted">{{ n }}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <form class="inline" method="post" action="/accounts/limit">
+          <input type="hidden" name="handle" value="{{ handle }}">
+          <input type="number" name="max_tweets" min="1" value="{{ default_max }}"
+                 style="width:70px;" title="Max tweets to capture for @{{ handle }}">
+          <button class="btn-sm btn-ghost">Set limit</button>
+        </form>
+        <form class="inline" method="post" action="/accounts/exclude">
+          <input type="hidden" name="handle" value="{{ handle }}">
+          <button class="btn-sm btn-ghost">Exclude</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted" style="margin-top:10px;">No accounts seen yet — run a digest first.</p>
+  {% endif %}
+</div>
+{% endblock %}

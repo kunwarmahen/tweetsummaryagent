@@ -1,0 +1,16 @@
+# Works with `podman-compose up` or `docker compose up`.
+# Uses host networking so the container can reach Ollama on the host at localhost:11434
+# and the UI is available at http://localhost:8000.
+services:
+  agent:
+    build: .
+    image: twitter-summary-agent
+    container_name: twitter-summary-agent
+    network_mode: host
+    env_file: .env
+    environment:
+      - OLLAMA_URL=http://localhost:11434
+    volumes:
+      - ./data:/app/data:Z          # DB, run snapshots, saved digests (read-write)
+      - ./auth:/app/auth:ro,Z       # session imported on the host (read-only)
+    restart: unless-stopped

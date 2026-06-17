@@ -1,0 +1,63 @@
+"""Database engine, initialization, and session helpers."""
+from pathlib import Path
+
+from sqlmodel import Session, SQLModel, create_engine, select
+
+from config import settings
+from db import models  # noqa: F401  (ensures tables are registered on SQLModel.metadata)
+from db.models import AppSettings
+
+engine = create_engine(settings.database_url, echo=False)
+
+
+def init_db() -> None:
+    """Create the DB file, all tables, and a default settings row if missing."""
+    Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
+    SQLModel.metadata.create_all(engine)
+    _ensure_columns()
+    with Session(engine) as session:
+        existing = session.get(AppSettings, 1)
+        if existing is None:
+            session.add(AppSettings(id=1))
+            session.commit()
+
+
+# Lightweight additive migrations for columns added after a DB was first created.
+_MIGRATIONS = {
+    "digest_runs": {"telegram_sent": "BOOLEAN DEFAULT 0"},
+    "settings": {
+        "exclude_keywords": "VARCHAR DEFAULT ''",
+        "clustering_method": "VARCHAR DEFAULT 'llm'",
+        "embedding_model": "VARCHAR DEFAULT 'nomic-embed-text'",
+        "similarity_threshold": "FLOAT DEFAULT 0.55",
+        "stitch_threads": "BOOLEAN DEFAULT 1",
+        "thread_mode": "VARCHAR DEFAULT 'reply'",
+        "thread_gap_minutes": "INTEGER DEFAULT 10",
+    },
+}
+
+
+def _ensure_columns() -> None:
+    with engine.connect() as conn:
+        for table, cols in _MIGRATIONS.items():
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            for col, decl in cols.items():
+                if col not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        conn.commit()
+
+
+def get_session() -> Session:
+    """Return a new session (caller manages the context)."""
+    return Session(engine)
+
+
+def get_settings(session: Session) -> AppSettings:
+    """Fetch the single settings row, creating it if absent."""
+    row = session.get(AppSettings, 1)
+    if row is None:
+        row = AppSettings(id=1)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+    return row

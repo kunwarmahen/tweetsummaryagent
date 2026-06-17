@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set active = 'runs' %}
+{% block content %}
+<div class="flex-between">
+  <div>
+    <h2>Runs</h2>
+    <p class="sub">History of digest pipeline runs.</p>
+  </div>
+  <form class="inline" method="post" action="/run-now">
+    <button {% if running %}disabled{% endif %}>{{ 'Running…' if running else 'Run now' }}</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if runs %}
+  <table>
+    <tr><th>#</th><th>Status</th><th>Started (UTC)</th><th>Tweets</th><th>Themes</th><th>Delivered</th><th>Digest</th></tr>
+    {% for r in runs %}
+    <tr>
+      <td>{{ r.id }}</td>
+      <td><span class="pill {{ r.status.value }}">{{ r.status.value }}</span></td>
+      <td class="muted">{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '' }}</td>
+      <td>{{ r.tweet_count }}</td>
+      <td>{{ r.theme_count }}</td>
+      <td>
+        {% if r.emailed %}<span title="Emailed">✉️</span>{% endif %}
+        {% if r.telegram_sent %}<span title="Sent to Telegram">📨</span>{% endif %}
+        {% if not r.emailed and not r.telegram_sent %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td>
+        {% if r.digest_path %}<a href="/digest/{{ r.id }}" target="_blank">View</a>
+        {% elif r.status.value == 'failed' %}
+          <form class="inline" method="post" action="/runs/{{ r.id }}/resume">
+            <button {% if running %}disabled{% endif %} title="Re-run the failed stages from the saved scrape">Resume</button>
+          </form>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>
+    {% if r.error %}
+    <tr><td></td><td colspan="6" class="muted" style="color:#c81e1e;">{{ r.error }}</td></tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No runs yet. Hit “Run now” to generate your first digest.</p>
+  {% endif %}
+</div>
+{% endblock %}

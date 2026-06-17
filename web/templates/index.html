@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set active = 'home' %}
+{% block content %}
+<h2>Dashboard</h2>
+<p class="sub">Daily themed digest of tweets from the accounts you follow.</p>
+
+<div class="card">
+  <div class="grid">
+    <div class="stat"><div class="n">{{ run_count }}</div><div class="l">Total runs</div></div>
+    <div class="stat"><div class="n">{{ raw_count }}</div><div class="l">Tweets archived</div></div>
+    <div class="stat"><div class="n">{{ tweet_count }}</div><div class="l">Tweets digested</div></div>
+    <div class="stat"><div class="n">{{ excluded_count }}</div><div class="l">Excluded accounts</div></div>
+    <div class="stat"><div class="n">{{ cfg.max_themes }}</div><div class="l">Max themes</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="flex-between">
+    <div>
+      <strong>Last run</strong>
+      {% if last_run %}
+        <div class="muted" style="margin-top:6px;">
+          #{{ last_run.id }} ·
+          <span class="pill {{ last_run.status.value }}">{{ last_run.status.value }}</span>
+          · {{ last_run.tweet_count }} tweets · {{ last_run.theme_count }} themes
+          {% if last_run.started_at %}· {{ last_run.started_at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+        </div>
+      {% else %}
+        <div class="muted" style="margin-top:6px;">No runs yet.</div>
+      {% endif %}
+    </div>
+    <form class="inline" method="post" action="/run-now">
+      <button {% if running %}disabled{% endif %}>{{ 'Running…' if running else 'Run now' }}</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <strong>Current config</strong>
+  <div class="muted" style="margin-top:8px; line-height:1.8;">
+    Model: <code>{{ cfg.ollama_model }}</code> ·
+    Window: {{ cfg.time_window_hours }}h ·
+    Style: {{ cfg.digest_style.value }} ·
+    Schedule: {{ '%02d:%02d'|format(cfg.schedule_hour, cfg.schedule_minute) }}
+    ({{ 'enabled' if cfg.schedule_enabled else 'disabled' }})
+  </div>
+</div>
+{% endblock %}
