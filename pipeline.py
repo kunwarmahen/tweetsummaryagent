@@ -697,3 +697,66 @@ def delete_run(run_id: int) -> dict | None:
                "digest_deleted": digest_deleted, "snapshots_deleted": snapshots_deleted}
     logger.info("Deleted run %s: %s", run_id, summary)
     return summary
+
+
+def reset_runs(backup: bool = True) -> dict:
+    """Delete ALL run data, keeping configuration. Returns a summary dict.
+
+    Removes the run-history + tweet + raw-archive + trends tables and the on-disk snapshot dirs
+    and rendered digests. KEEPS settings, excluded accounts, per-account limits/VIPs, and topics.
+    Refuses while a run is in progress. Optionally backs up the SQLite file first (timestamped).
+    """
+    import shutil
+    from pathlib import Path
+
+    from sqlmodel import delete, func, select
+
+    from db.models import DailyStat, MetaDigest, ThemeHistory, TopicCluster
+
+    if is_running():
+        raise RuntimeError("A run is in progress; cannot reset now.")
+
+    # Back up the DB file first so the wipe is reversible.
+    backup_path = None
+    if backup:
+        src = Path(settings.db_path)
+        if src.is_file():
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = src.with_suffix(src.suffix + f".{stamp}.bak")
+            shutil.copy2(src, backup_path)
+
+    # Children before parents so foreign keys never dangle.
+    ordered = (ThemeHistory, TopicCluster, MetaDigest, DailyStat, Tweet, RawTweet, DigestRunRow)
+    labels = {ThemeHistory: "theme_history", TopicCluster: "theme_clusters",
+              MetaDigest: "meta_digests", DailyStat: "daily_stats", Tweet: "tweets",
+              RawTweet: "raw_tweets", DigestRunRow: "digest_runs"}
+    counts: dict[str, int] = {}
+    with get_session() as session:
+        for model in ordered:
+            counts[labels[model]] = session.exec(select(func.count()).select_from(model)).one()
+            session.exec(delete(model))
+        session.commit()
+
+    # On-disk artifacts — only ever within our own data dir.
+    data_dir = Path(settings.data_dir).resolve()
+    removed_dirs = removed_files = 0
+    runs_dir = data_dir / "runs"
+    if runs_dir.is_dir():
+        for p in runs_dir.iterdir():
+            if p.is_dir():
+                shutil.rmtree(p)
+                removed_dirs += 1
+            elif p.is_file():
+                p.unlink()
+                removed_files += 1
+    digests_dir = data_dir / "digests"
+    if digests_dir.is_dir():
+        for p in digests_dir.iterdir():
+            if p.is_file():
+                p.unlink()
+                removed_files += 1
+
+    summary = {"tables": counts, "snapshot_dirs": removed_dirs, "files": removed_files,
+               "backup": str(backup_path) if backup_path else None}
+    logger.info("Reset runs: %s", summary)
+    return summary

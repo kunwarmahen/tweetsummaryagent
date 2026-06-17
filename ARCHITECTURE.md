@@ -19,7 +19,7 @@ A single FastAPI process does everything:
   trigger the same code paths on demand.
 
 The CLI (`main.py`) can also run any piece headlessly (`init-db`, `login`, `run`, `ingest`,
-`process`, `deliver`, `resume`, `delete-run`, `archive-backfill`, `serve`).
+`process`, `deliver`, `resume`, `delete-run`, `reset-runs`, `archive-backfill`, `serve`).
 
 ## Scheduling: collect / process / deliver
 
@@ -90,6 +90,11 @@ power three operations:
 - **Delete** (`pipeline.delete_run`) — removes a run and *all* its data: the `digest_runs` row, its
   `tweets` and `raw_tweets`, the saved digest HTML (only if under `data/`), and the snapshot dir.
   Refuses while the run is in progress. CLI `delete-run <id>` / UI "Delete".
+- **Reset** (`pipeline.reset_runs`) — start fresh: wipes *all* run data (the `digest_runs`, `tweets`,
+  `raw_tweets`, and trends tables — `daily_stats`, `theme_clusters`, `theme_history`, `meta_digests`)
+  plus the `data/runs/` snapshots and `data/digests/` HTML, while **keeping** configuration
+  (`settings`, `excluded_accounts`, `account_settings`, `topics`). Backs up `agent.db` first and
+  refuses while a run is in progress. CLI `reset-runs [--yes] [--no-backup]`.
 
 `backfill_raw_archive()` (CLI `archive-backfill`) seeds `raw_tweets` from existing `1_collected`
 snapshots — a one-time historical import for DBs created before the archive existed.

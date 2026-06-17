@@ -100,6 +100,7 @@ is durable:
 python main.py resume                # resume the most recent failed run (no re-scrape)
 python main.py resume 7              # resume a specific run
 python main.py delete-run 7          # delete a run and ALL its data (tweets, archive, files)
+python main.py reset-runs            # wipe ALL run data and start fresh (keeps settings/accounts/topics)
 python main.py archive-backfill      # one-time: seed the raw archive from existing snapshots
 ```
 

@@ -62,6 +62,7 @@ Open the printed HTML file in a browser to see your themed digest.
 | `deliver` | Phase 3: finalize + send the day's digest from the archive. |
 | `resume [run_id]` | Resume a failed run from its last snapshot — no re-scrape (default: most recent failed run). |
 | `delete-run <run_id>` | Delete a run and all its data (tweets, raw archive, digest, snapshots). |
+| `reset-runs [--yes] [--no-backup]` | Delete **all** run data (runs, tweets, archive, trends) and start fresh — keeps settings, accounts, limits/VIPs, topics. Backs up `agent.db` first. |
 | `archive-backfill` | One-time: import past `1_collected` snapshots into the raw tweet archive. |
 | `login` | Manual browser-login fallback (rarely needed). |
 | `telegram-chatid` | Discover your Telegram chat id (after messaging your bot). |

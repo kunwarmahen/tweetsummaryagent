@@ -192,6 +192,33 @@ def cmd_delete_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reset_runs(args: argparse.Namespace) -> int:
+    """Delete ALL run data (runs, tweets, raw archive, trends) — keeps settings/accounts/topics."""
+    import logging
+
+    import pipeline
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    if not args.yes:
+        resp = input("This deletes ALL run data (runs, tweets, archive, trends) but KEEPS your "
+                     "settings, accounts, limits/VIPs, and topics. Continue? [y/N] ")
+        if resp.strip().lower() not in ("y", "yes"):
+            print("Aborted.")
+            return 1
+    try:
+        summary = pipeline.reset_runs(backup=not args.no_backup)
+    except RuntimeError as e:
+        print(f"Error: {e}")
+        return 1
+    t = summary["tables"]
+    print(f"Cleared {t['digest_runs']} runs, {t['tweets']} digested tweets, {t['raw_tweets']} raw "
+          f"tweets, {t['theme_history']} themes, {t['meta_digests']} meta-digests; removed "
+          f"{summary['snapshot_dirs']} snapshot dir(s) + {summary['files']} file(s).")
+    if summary["backup"]:
+        print(f"DB backed up to {summary['backup']}")
+    return 0
+
+
 def cmd_archive_backfill(_args: argparse.Namespace) -> int:
     import logging
 
@@ -283,6 +310,12 @@ def build_parser() -> argparse.ArgumentParser:
     del_p = sub.add_parser("delete-run", help="Delete a run and all its data (tweets, archive, files)")
     del_p.add_argument("run_id", type=int, help="Run id to delete")
     del_p.set_defaults(func=cmd_delete_run)
+
+    reset_p = sub.add_parser("reset-runs",
+                             help="Delete ALL run data (runs, tweets, archive, trends); keeps config")
+    reset_p.add_argument("--yes", action="store_true", help="Skip the confirmation prompt")
+    reset_p.add_argument("--no-backup", action="store_true", help="Don't back up agent.db first")
+    reset_p.set_defaults(func=cmd_reset_runs)
 
     trends_p = sub.add_parser("trends-rebuild",
                               help="Rebuild trend tables from the archive + snapshots (daily_stats + themes)")
