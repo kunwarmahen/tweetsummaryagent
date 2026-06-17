@@ -4,7 +4,7 @@
 # Auto-uses the project venv so you never type ./venv/bin/python.
 #
 # Usage:
-#   ./run.sh                 # interactive menu of common commands
+#   ./run.sh                 # interactive menu (auto-starts `serve` after 5s)
 #   ./run.sh serve           # pass a command straight through to main.py
 #   ./run.sh run --max-accounts 5
 #   ./run.sh <any main.py command...>
@@ -57,9 +57,18 @@ Twitter Summary Agent — what would you like to do?
 
     h) help               Show full main.py help
     q) quit
+
+  (no choice within 5s -> starts the server)
 MENU
 
-read -rp "Choice: " choice
+# Default to `serve` if the user doesn't choose within 5 seconds
+# (or just presses Enter). `read` times out with a non-zero status,
+# which `set -e` would treat as fatal, so guard it.
+if ! read -t 5 -rp "Choice [default: serve]: " choice || [[ -z "$choice" ]]; then
+  echo "+ defaulting to serve"
+  choice=4
+fi
+
 case "$choice" in
   1)  run init-db ;;
   2)  run import-profile ;;
