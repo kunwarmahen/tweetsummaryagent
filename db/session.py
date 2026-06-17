@@ -43,6 +43,10 @@ _MIGRATIONS = {
         "stitch_threads": "BOOLEAN DEFAULT 1",
         "thread_mode": "VARCHAR DEFAULT 'reply'",
         "thread_gap_minutes": "INTEGER DEFAULT 10",
+        "collection_enabled": "BOOLEAN DEFAULT 0",
+        "collection_interval_hours": "INTEGER DEFAULT 3",
+        "process_enabled": "BOOLEAN DEFAULT 0",
+        "process_interval_hours": "INTEGER DEFAULT 4",
     },
     "account_settings": {
         "important": "BOOLEAN DEFAULT 0",

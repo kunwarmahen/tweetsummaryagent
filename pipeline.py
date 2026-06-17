@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from agents.base import AgentContext
 from agents.clusterer import EmbeddingClusterer
@@ -23,7 +23,7 @@ from config import settings
 from db.models import (ClusteringMethod, DigestRun as DigestRunRow, DigestStyle,
                        RawTweet, RunStatus, Tweet)
 from db.session import get_session, get_settings
-from state import DigestRun, load_latest_snapshot
+from state import DigestRun, TweetItem, load_latest_snapshot
 
 logger = logging.getLogger("pipeline")
 
@@ -69,6 +69,50 @@ def replay_guarded(source_run_id: int, overrides: dict | None = None,
         return None
     try:
         return replay(source_run_id, overrides=overrides, deliver=deliver)
+    except Exception:
+        return None  # already recorded on the DigestRun row
+    finally:
+        _run_lock.release()
+
+
+def collect_guarded() -> int:
+    """Scrape new tweets into the archive (Phase 1) unless a run is already in progress.
+
+    Returns the number of newly-archived tweets (0 if skipped or nothing new).
+    """
+    if not _run_lock.acquire(blocking=False):
+        logger.info("A run is already in progress; skipping collection.")
+        return 0
+    try:
+        return collect()
+    except Exception:
+        logger.exception("Collection failed")
+        return 0
+    finally:
+        _run_lock.release()
+
+
+def refresh_draft_guarded() -> DigestRun | None:
+    """Refresh the live draft digest (Phase 2) unless a run is already in progress."""
+    if not _run_lock.acquire(blocking=False):
+        logger.info("A run is already in progress; skipping draft refresh.")
+        return None
+    try:
+        return refresh_draft()
+    except Exception:
+        logger.exception("Draft refresh failed")
+        return None
+    finally:
+        _run_lock.release()
+
+
+def deliver_guarded() -> DigestRun | None:
+    """Finalize + send the day's digest (Phase 3) unless a run is already in progress."""
+    if not _run_lock.acquire(blocking=False):
+        logger.info("A run is already in progress; skipping delivery.")
+        return None
+    try:
+        return deliver()
     except Exception:
         return None  # already recorded on the DigestRun row
     finally:
@@ -209,12 +253,8 @@ def backfill_raw_archive() -> int:
     return total
 
 
-def _update_trends(run_id: int, state: DigestRun, app_settings) -> None:
-    """Refresh materialized trends after a real run. Best-effort: never fails the run.
-
-    Skipped for replays (they re-summarize already-archived tweets — no new data to aggregate).
-    Daily stats and theme continuity are independent: a failure in one won't block the other.
-    """
+def _refresh_daily_stats(run_id: int | None = None) -> None:
+    """Rebuild the materialized daily series from the archive. Best-effort."""
     from agents import analytics
 
     try:
@@ -222,8 +262,20 @@ def _update_trends(run_id: int, state: DigestRun, app_settings) -> None:
     except Exception:
         logger.exception("Daily-stats refresh failed for run %s (continuing)", run_id)
 
+
+def _update_trends(run_id: int, state: DigestRun, app_settings, index_themes: bool = True) -> None:
+    """Refresh materialized trends after a real run. Best-effort: never fails the run.
+
+    Theme continuity is indexed only for *finalized* (delivered) digests — intraday draft
+    refreshes pass index_themes=False so the live draft doesn't pollute theme history.
+    Skipped entirely for replays (no new data to aggregate).
+    """
+    from agents import analytics
+
+    _refresh_daily_stats(run_id)
+
     # Theme continuity is only meaningful for the themed digest style (titles are topics).
-    if getattr(app_settings, "digest_style", None) == DigestStyle.themed and state.themes:
+    if index_themes and getattr(app_settings, "digest_style", None) == DigestStyle.themed and state.themes:
         try:
             with get_session() as session:
                 analytics.index_run_themes(
@@ -314,6 +366,164 @@ def run(max_accounts: int | None = None) -> DigestRun:
         logger.exception("Digest run %s failed", run_id)
         raise
 
+    return state
+
+
+# ----------------------------------------------------------------------------------------------
+# Decoupled phases: Collect (every N hrs) -> Process/draft (every M hrs) -> Deliver (evening).
+# Collection scrapes into the raw archive; processing rebuilds a live draft digest from the
+# archive without delivering; delivery finalizes the draft, sends it, and commits cross-day dedup.
+# ----------------------------------------------------------------------------------------------
+
+def _load_archive_window(hours: int) -> list[TweetItem]:
+    """Build a digest's candidate tweet set from the raw archive — no scraping.
+
+    Returns archived tweets created within the last `hours`. The Filter stage still re-applies
+    the time window and cross-day dedup, so this only scopes the candidate pool. Archived
+    timestamps are naive UTC; we emit tz-aware ISO so the Filter parses them correctly.
+    """
+    from sqlmodel import select
+
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    with get_session() as session:
+        rows = session.exec(
+            select(RawTweet).where(RawTweet.created_at >= cutoff)
+            .order_by(RawTweet.created_at.desc())
+        ).all()
+    items: list[TweetItem] = []
+    for r in rows:
+        created = r.created_at.replace(tzinfo=timezone.utc).isoformat() if r.created_at else None
+        items.append(TweetItem(
+            tweet_id=r.tweet_id, handle=r.handle, author_name=r.author_name,
+            text=r.text, url=r.url, created_at=created, likes=r.likes,
+            retweets=r.retweets, is_retweet=r.is_retweet,
+            reply_to=r.reply_to, is_self_reply=r.is_self_reply,
+        ))
+    return items
+
+
+def collect() -> int:
+    """Phase 1: scrape new tweets into the raw archive. No filter/summary/digest/delivery.
+
+    The Collector skips tweets already archived (early-stop), so frequent collection stays cheap
+    and avoids re-hammering X. Returns the number of newly-archived tweets.
+    """
+    app_settings = _load_app_settings()
+    ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
+    state = DigestRun()
+    logger.info("=== Collection started at %s ===", datetime.now(timezone.utc).isoformat())
+    Collector(ctx).run(state)
+    added = _archive_raw(None, state)
+    _refresh_daily_stats()
+    logger.info("=== Collection done: %d scraped, %d newly archived ===",
+                len(state.raw_tweets), added)
+    return added
+
+
+def _create_draft_row() -> int:
+    with get_session() as session:
+        row = DigestRunRow(status=RunStatus.draft)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row.id
+
+
+def _current_draft_id() -> int | None:
+    """The id of the day's in-progress draft digest, if one exists (delivery finalizes it)."""
+    from sqlmodel import select
+
+    with get_session() as session:
+        row = session.exec(
+            select(DigestRunRow).where(DigestRunRow.status == RunStatus.draft)
+            .order_by(DigestRunRow.id.desc())
+        ).first()
+        return row.id if row else None
+
+
+def _update_draft_row(run_id: int, state: DigestRun) -> None:
+    """Refresh a draft row's counts/path in place (status stays 'draft')."""
+    with get_session() as session:
+        row = session.get(DigestRunRow, run_id)
+        if row is None:
+            return
+        row.tweet_count = len(state.filtered_tweets)
+        row.theme_count = len(state.themes)
+        row.digest_path = state.digest_path
+        handles = {t.handle for t in (state.raw_tweets or state.filtered_tweets)}
+        if handles:
+            row.account_count = len(handles)
+        session.add(row)
+        session.commit()
+
+
+def refresh_draft() -> DigestRun | None:
+    """Phase 2: rebuild the live draft digest from the archive (render only, never delivers).
+
+    Reuses the single open draft row (or creates one) so the portal shows one growing "Today"
+    digest. Does NOT persist tweets — that happens only at delivery, so each refresh shows the
+    full set of tweets collected since the last delivery rather than disjoint slices.
+    """
+    app_settings = _load_app_settings({"deliver": False})
+    raw = _load_archive_window(app_settings.time_window_hours)
+    if not raw:
+        logger.info("Draft refresh: no tweets in the archive window yet.")
+        return None
+
+    ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
+    run_id = _current_draft_id()
+    if run_id is None:
+        run_id = _create_draft_row()
+        _record_params(run_id, app_settings, source_run_id=None)
+    state = DigestRun(run_id=run_id)
+    state.raw_tweets = raw
+    logger.info("=== Draft refresh (run %s): %d archived tweets in window ===", run_id, len(raw))
+
+    state.snapshot(settings.data_dir, "1_collected")
+    _run_stages(ctx, state, start_after=None)   # deliver=False → renders but doesn't send
+    _update_draft_row(run_id, state)
+    logger.info("=== Draft refresh (run %s) done: %d tweets, %d themes -> %s ===",
+                run_id, len(state.filtered_tweets), len(state.themes), state.digest_path)
+    return state
+
+
+def deliver() -> DigestRun | None:
+    """Phase 3: finalize and send the day's digest, then commit cross-day dedup.
+
+    Takes over the open draft row (or creates one), re-processes the archive window to be
+    current, delivers via email/Telegram, persists the digested tweets (so they won't repeat
+    tomorrow), indexes theme continuity, and marks the run success.
+    """
+    app_settings = _load_app_settings({"deliver": True})
+    raw = _load_archive_window(app_settings.time_window_hours)
+    if not raw:
+        logger.info("Delivery: nothing in the archive window to send.")
+        return None
+
+    ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
+    run_id = _current_draft_id()
+    if run_id is None:
+        run_id = _create_draft_row()
+        _record_params(run_id, app_settings, source_run_id=None)
+    _mark_running(run_id)
+    state = DigestRun(run_id=run_id)
+    state.raw_tweets = raw
+    logger.info("=== Delivering digest (run %s): %d archived tweets in window ===", run_id, len(raw))
+
+    try:
+        state.snapshot(settings.data_dir, "1_collected")
+        _run_stages(ctx, state, start_after=None)   # deliver=True → reporter sends
+        _persist_tweets(run_id, state)              # commit dedup: today's set is now "seen"
+        _update_trends(run_id, state, app_settings, index_themes=True)
+        _finish_run_row(run_id, state, RunStatus.success, None)
+        logger.info("=== Delivered run %s: %d tweets, %d themes -> %s (emailed=%s, telegram=%s) ===",
+                    run_id, len(state.filtered_tweets), len(state.themes), state.digest_path,
+                    state.emailed, state.telegram_sent)
+    except Exception as e:
+        state.error = str(e)
+        _finish_run_row(run_id, state, RunStatus.failed, str(e))
+        logger.exception("Delivery run %s failed", run_id)
+        raise
     return state
 
 

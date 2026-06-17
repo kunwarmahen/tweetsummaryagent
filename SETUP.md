@@ -81,7 +81,12 @@ errors** (session cookies expire periodically).
 python main.py run
 python main.py run --max-accounts 5   # quick test on a few accounts
 
-# Start the web UI + in-process daily scheduler
+# Or drive the decoupled phases by hand:
+python main.py ingest                 # scrape new tweets into the archive
+python main.py process                # rebuild the live "Today" draft (no send)
+python main.py deliver                # finalize + send the day's digest
+
+# Start the web UI + in-process scheduler (fires whichever schedules you enable)
 python main.py serve
 # open http://localhost:8000
 ```
@@ -104,10 +109,12 @@ it survives filtering and pipeline failures. SQLite handles this comfortably at 
 
 ## In the UI
 
-- **Dashboard** — stats (archived vs digested tweets), current config, "Run now".
+- **Dashboard** — stats (archived vs digested tweets), current config, "Run now", and a **Today's
+  digest (live)** card with Collect / Refresh / Deliver buttons when the decoupled schedules are on.
 - **Accounts** — exclude accounts from scraping, and set a **per-account tweet limit** (any handle
   or a recently-seen one); accounts without an override use the global default.
-- **Settings** — schedule, time window, retweets, thread stitching, exclude-keywords, model,
+- **Settings** — three **schedules** (Delivery evening send / Collection every N h / Processing
+  live-draft every M h), time window, retweets, thread stitching, exclude-keywords, model,
   max themes, topics, digest style (themed / per-account / highlights), and clustering
   (LLM one-prompt vs. embedding-based + similarity threshold).
 - **Runs** — history with status and ✉️/📨 delivery icons; *View* a past digest, **Resume** a

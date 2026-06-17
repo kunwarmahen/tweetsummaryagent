@@ -26,9 +26,17 @@ is_running = pipeline.is_running
 def dashboard(request: Request):
     from agents import analytics
 
+    from db.models import RunStatus
     with get_session() as s:
         cfg = get_settings(s)
-        last_run = s.exec(select(DigestRun).order_by(DigestRun.id.desc())).first()
+        draft = s.exec(
+            select(DigestRun).where(DigestRun.status == RunStatus.draft)
+            .order_by(DigestRun.id.desc())
+        ).first()
+        last_run = s.exec(
+            select(DigestRun).where(DigestRun.status != RunStatus.draft)
+            .order_by(DigestRun.id.desc())
+        ).first()
         run_count = s.exec(select(func.count(DigestRun.id))).one()
         tweet_count = s.exec(select(func.count(Tweet.id))).one()
         raw_count = s.exec(select(func.count(RawTweet.id))).one()
@@ -37,7 +45,7 @@ def dashboard(request: Request):
         trending = analytics.trending_themes(s, days=7, limit=3)
     sparkline = {"labels": [d.date for d in spark], "tweets": [d.tweet_count for d in spark]}
     return templates.TemplateResponse(request, "index.html", {
-        "cfg": cfg, "last_run": last_run,
+        "cfg": cfg, "last_run": last_run, "draft": draft,
         "run_count": run_count, "tweet_count": tweet_count, "raw_count": raw_count,
         "excluded_count": excluded_count, "running": is_running(),
         "sparkline": sparkline, "trending": trending,
@@ -48,6 +56,30 @@ def dashboard(request: Request):
 def run_now(background_tasks: BackgroundTasks):
     if not is_running():
         background_tasks.add_task(pipeline.run_guarded)
+    return RedirectResponse("/runs", status_code=303)
+
+
+@router.post("/collect-now")
+def collect_now(background_tasks: BackgroundTasks):
+    """Phase 1: scrape new tweets into the archive."""
+    if not is_running():
+        background_tasks.add_task(pipeline.collect_guarded)
+    return RedirectResponse("/", status_code=303)
+
+
+@router.post("/refresh-now")
+def refresh_now(background_tasks: BackgroundTasks):
+    """Phase 2: rebuild the live draft digest (no delivery)."""
+    if not is_running():
+        background_tasks.add_task(pipeline.refresh_draft_guarded)
+    return RedirectResponse("/", status_code=303)
+
+
+@router.post("/deliver-now")
+def deliver_now(background_tasks: BackgroundTasks):
+    """Phase 3: finalize + send the day's digest."""
+    if not is_running():
+        background_tasks.add_task(pipeline.deliver_guarded)
     return RedirectResponse("/runs", status_code=303)
 
 
@@ -309,7 +341,11 @@ def save_settings(
     exclude_keywords: str = Form(""),
     thread_mode: str = Form("reply"),
     thread_gap_minutes: int = Form(10),
+    collection_interval_hours: int = Form(3),
+    process_interval_hours: int = Form(4),
     schedule_enabled: str = Form(None),
+    collection_enabled: str = Form(None),
+    process_enabled: str = Form(None),
     include_retweets: str = Form(None),
     stitch_threads: str = Form(None),
 ):
@@ -317,6 +353,10 @@ def save_settings(
         cfg = get_settings(s)
         cfg.schedule_hour = max(0, min(23, schedule_hour))
         cfg.schedule_minute = max(0, min(59, schedule_minute))
+        cfg.collection_interval_hours = max(1, collection_interval_hours)
+        cfg.process_interval_hours = max(1, process_interval_hours)
+        cfg.collection_enabled = collection_enabled is not None
+        cfg.process_enabled = process_enabled is not None
         cfg.time_window_hours = max(1, time_window_hours)
         cfg.max_tweets_per_account = max(1, max_tweets_per_account)
         cfg.max_themes = max(1, max_themes)

@@ -14,6 +14,42 @@
   </div>
 </div>
 
+{% if cfg.collection_enabled or cfg.process_enabled or draft %}
+<div class="card">
+  <div class="flex-between">
+    <div>
+      <strong>Today’s digest (live)</strong>
+      {% if draft %}
+        <div class="muted" style="margin-top:6px;">
+          #{{ draft.id }} ·
+          <span class="pill draft">draft</span>
+          · {{ draft.tweet_count }} tweets · {{ draft.theme_count }} themes
+          {% if draft.started_at %}· started {{ draft.started_at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+        </div>
+        <div style="margin-top:8px;">
+          {% if draft.digest_path %}<a href="/digest/{{ draft.id }}">View live digest →</a>{% endif %}
+        </div>
+      {% else %}
+        <div class="muted" style="margin-top:6px;">
+          No draft yet — collect, then refresh to build today’s digest.
+        </div>
+      {% endif %}
+    </div>
+    <div style="display:flex; gap:8px;">
+      <form class="inline" method="post" action="/collect-now">
+        <button class="btn-sm" {% if running %}disabled{% endif %}>Collect now</button>
+      </form>
+      <form class="inline" method="post" action="/refresh-now">
+        <button class="btn-sm" {% if running %}disabled{% endif %}>Refresh digest</button>
+      </form>
+      <form class="inline" method="post" action="/deliver-now">
+        <button class="btn-sm" {% if running %}disabled{% endif %}>Deliver now</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="flex-between">
     <div>
@@ -64,8 +100,10 @@
   <div class="muted" style="margin-top:8px; line-height:1.8;">
     Model: <code>{{ cfg.ollama_model }}</code> ·
     Window: {{ cfg.time_window_hours }}h ·
-    Style: {{ cfg.digest_style.value }} ·
-    Schedule: {{ '%02d:%02d'|format(cfg.schedule_hour, cfg.schedule_minute) }}
+    Style: {{ cfg.digest_style.value }}<br>
+    Collection: {{ ('every %dh'|format(cfg.collection_interval_hours)) if cfg.collection_enabled else 'off' }} ·
+    Live refresh: {{ ('every %dh'|format(cfg.process_interval_hours)) if cfg.process_enabled else 'off' }} ·
+    Delivery: {{ '%02d:%02d'|format(cfg.schedule_hour, cfg.schedule_minute) }}
     ({{ 'enabled' if cfg.schedule_enabled else 'disabled' }})
   </div>
 </div>

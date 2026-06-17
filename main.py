@@ -115,6 +115,51 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ingest(_args: argparse.Namespace) -> int:
+    """Phase 1: scrape new tweets into the archive (no summary/digest/delivery)."""
+    import logging
+
+    import pipeline
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    added = pipeline.collect()
+    print(f"Done. {added} newly-archived tweets.")
+    return 0
+
+
+def cmd_process(_args: argparse.Namespace) -> int:
+    """Phase 2: rebuild the live draft digest from the archive (render only, no delivery)."""
+    import logging
+
+    import pipeline
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    state = pipeline.refresh_draft()
+    if state is None:
+        print("Nothing in the archive window to process yet.")
+        return 1
+    print(f"Draft refreshed (run {state.run_id}). {len(state.filtered_tweets)} tweets, "
+          f"{len(state.themes)} themes -> {state.digest_path}")
+    return 0
+
+
+def cmd_deliver(_args: argparse.Namespace) -> int:
+    """Phase 3: finalize + send the day's digest from the archive."""
+    import logging
+
+    import pipeline
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    state = pipeline.deliver()
+    if state is None:
+        print("Nothing in the archive window to deliver.")
+        return 1
+    print(f"Delivered run {state.run_id}. {len(state.filtered_tweets)} tweets, "
+          f"{len(state.themes)} themes -> {state.digest_path} "
+          f"(emailed={state.emailed}, telegram={state.telegram_sent})")
+    return 0
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
     import logging
 
@@ -215,9 +260,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("telegram-chatid", help="Discover your Telegram chat id").set_defaults(func=cmd_telegram_chatid)
     sub.add_parser("telegram-test", help="Send a Telegram test message").set_defaults(func=cmd_telegram_test)
 
-    run_p = sub.add_parser("run", help="Run the digest pipeline once")
+    run_p = sub.add_parser("run", help="Run the digest pipeline once (scrape + summarize + deliver)")
     run_p.add_argument("--max-accounts", type=int, default=None, help="Limit accounts scraped (testing)")
     run_p.set_defaults(func=cmd_run)
+
+    sub.add_parser("ingest", help="Phase 1: scrape new tweets into the archive (no digest)"
+                   ).set_defaults(func=cmd_ingest)
+    sub.add_parser("process", help="Phase 2: refresh the live draft digest (render, no send)"
+                   ).set_defaults(func=cmd_process)
+    sub.add_parser("deliver", help="Phase 3: finalize + send the day's digest from the archive"
+                   ).set_defaults(func=cmd_deliver)
 
     resume_p = sub.add_parser("resume", help="Resume a failed run from its snapshot (no re-scrape)")
     resume_p.add_argument("run_id", type=int, nargs="?", default=None,

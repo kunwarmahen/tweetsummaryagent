@@ -56,7 +56,10 @@ Open the printed HTML file in a browser to see your themed digest.
 | `init-db` | Create the SQLite database. |
 | `import-profile` | Reuse your logged-in Chrome X session (decrypts cookies). |
 | `collect [--max-accounts N] [--out FILE]` | Scrape + dump tweets only (debug). |
-| `run [--max-accounts N]` | Full pipeline: scrape → filter → summarize → render digest. |
+| `run [--max-accounts N]` | Full pipeline in one go: scrape → filter → summarize → render → deliver. |
+| `ingest` | Phase 1: scrape new tweets into the archive (no digest). |
+| `process` | Phase 2: refresh the live "Today" draft digest (render only, no send). |
+| `deliver` | Phase 3: finalize + send the day's digest from the archive. |
 | `resume [run_id]` | Resume a failed run from its last snapshot — no re-scrape (default: most recent failed run). |
 | `delete-run <run_id>` | Delete a run and all its data (tweets, raw archive, digest, snapshots). |
 | `archive-backfill` | One-time: import past `1_collected` snapshots into the raw tweet archive. |
@@ -69,28 +72,39 @@ Open the printed HTML file in a browser to see your themed digest.
 ```bash
 ./venv/bin/python main.py serve   # then open http://127.0.0.1:8000
 ```
-- **Dashboard** — stats (archived vs digested tweet counts), current config, "Run now".
+- **Dashboard** — stats (archived vs digested tweet counts), current config, "Run now", and a
+  **Today's digest (live)** card with **Collect now / Refresh digest / Deliver now** when the
+  decoupled schedules are in use.
 - **Accounts** — exclude accounts from scraping, and set a **per-account tweet limit** (any handle,
   or one of the recently-seen accounts); accounts without an override use the global default.
   Mark accounts **★ Important** to color-highlight their tweets (legend included), guarantee they
   appear, and float them to the top of the digest; each gets its own auto-assigned (editable) color.
-- **Settings** — schedule, time window, retweets, **thread stitching**, exclude-keywords, model,
-  max themes, topics, **digest style** (themed / per-account / highlights), and **clustering**
-  (LLM one-prompt vs. embedding-based with `nomic-embed-text` + similarity threshold).
+- **Settings** — the three **schedules** (Delivery / Collection / Processing — see below), time
+  window, retweets, **thread stitching**, exclude-keywords, model, max themes, topics,
+  **digest style** (themed / per-account / highlights), and **clustering** (LLM one-prompt vs.
+  embedding-based with `nomic-embed-text` + similarity threshold).
 - **Runs** — history with status; *View* a past digest, **Resume** a failed run, or **Delete** a
   run and all its data. Click a run's **#id** for its detail page (what it did — style, model,
   clustering, accounts, theme titles) and a **Re-run** form: regenerate it with no re-scrape, with
   a different digest style / clustering / model / topics. Re-runs are new entries linked to the
   source; delivery stays off unless you tick "Also email / Telegram".
 
-## Daily schedule + email
-The scheduler runs inside `serve` — keep that process alive and it fires the digest daily at the
-time set in **Settings** (default 08:00). To receive it by email, fill the `SMTP_*`/`EMAIL_*`
-values in `.env` (e.g. Gmail + App Password); otherwise the digest is just saved to
-`data/digests/` and viewable under **Runs → View**.
+## Schedules + email
+The scheduler runs inside `serve` — keep that process alive. There are two ways to run it:
+
+- **Simple (default):** one daily run at the time set in **Settings → Delivery schedule**
+  (default 08:00) that scrapes, summarizes, and delivers in one go.
+- **Decoupled:** enable **Collection schedule** (scrape every N hours) and **Processing schedule**
+  (rebuild the live "Today" draft every M hours). The portal then shows the day's digest as it
+  builds up, while **Delivery** still emails/Telegrams once a day in the evening. Tweets are only
+  marked "delivered" at send time, so each refresh shows the whole day so far — not slices.
+
+To receive the digest by email, fill the `SMTP_*`/`EMAIL_*` values in `.env` (e.g. Gmail + App
+Password); otherwise it's just saved to `data/digests/` and viewable under **Runs → View** (or the
+live draft via the dashboard).
 
 ```bash
-./venv/bin/python main.py serve   # leave running; digest fires daily on schedule
+./venv/bin/python main.py serve   # leave running; schedules fire automatically
 ```
 
 ## Telegram delivery (optional)

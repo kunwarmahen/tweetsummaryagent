@@ -27,6 +27,7 @@ class RunStatus(str, Enum):
     running = "running"
     success = "success"
     failed = "failed"
+    draft = "draft"        # intraday "live" digest, refreshed in place until delivery finalizes it
 
 
 class AppSettings(SQLModel, table=True):
@@ -35,10 +36,20 @@ class AppSettings(SQLModel, table=True):
 
     id: int = Field(default=1, primary_key=True)
 
-    # Schedule (local time, 24h)
+    # Delivery schedule — the once-a-day evening send (local time, 24h)
     schedule_hour: int = 8
     schedule_minute: int = 0
     schedule_enabled: bool = True
+
+    # Collection schedule — scrape new tweets into the archive every N hours.
+    # When enabled, the delivery job reads from the archive instead of scraping inline.
+    collection_enabled: bool = False
+    collection_interval_hours: int = 3
+
+    # Processing schedule — refresh the "live" draft digest every N hours so the portal
+    # shows the day so far (filter+thread+cluster+summarize, rendered but NOT delivered).
+    process_enabled: bool = False
+    process_interval_hours: int = 4
 
     # Collection
     time_window_hours: int = 24

@@ -25,7 +25,7 @@ can be replayed or debugged without re-scraping.
 - 🎚️ **Per-account tweet limits** — cap how many tweets to capture for specific accounts (others use the global default).
 - 📧 **Email + Telegram + saved HTML** delivery.
 - ⚙️ **Web config UI** (FastAPI + HTML) backed by **SQLite**.
-- ⏰ **Built-in daily scheduler** (APScheduler, in-process).
+- ⏰ **Built-in scheduler** (APScheduler, in-process) — either one daily run, or a decoupled **collect (every few hours) → live "Today" draft → evening delivery** pipeline so the portal shows the day as it builds up while email/Telegram still goes out once a day. The collector early-stops on already-seen tweets so frequent scraping stays light. CLI: `ingest` / `process` / `deliver`.
 - 🔁 **Crash-resilient runs** — every stage is snapshotted, so a run that fails after scraping can be **resumed** without re-scraping.
 - 🗄️ **Raw tweet archive** — every collected tweet (pre-filter) is stored for later analysis, surviving filtering and failures.
 - 🗑️ **Run management** — delete a run and all of its data (tweets, archive rows, digest, snapshots) from the CLI or UI.
@@ -105,7 +105,8 @@ network or LLM calls (all mocked; DB-touching tests use an isolated in-memory en
 ## Status
 
 ✅ Feature-complete (all 5 phases). Import session → scrape → filter → summarize → render →
-email/save, on a daily schedule, configurable via the web UI. See [ROADMAP.md](ROADMAP.md).
+email/save — either as one daily run or split into a **collect → live draft → evening deliver**
+pipeline, all configurable via the web UI. See [ROADMAP.md](ROADMAP.md).
 
 ## Disclaimer
 

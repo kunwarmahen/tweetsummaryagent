@@ -6,14 +6,48 @@
 
 <form method="post" action="/settings">
   <div class="card">
-    <strong>Schedule</strong>
+    <strong>Delivery schedule (evening send)</strong>
+    <p class="muted" style="margin-top:4px;font-size:13px;">
+      Once a day the digest is finalized and emailed / sent to Telegram. When collection (below)
+      is enabled, this just sends what was collected; otherwise it scrapes and sends in one go.
+    </p>
     <div class="row">
       <div><label>Hour (0–23)</label><input type="number" name="schedule_hour" min="0" max="23" value="{{ cfg.schedule_hour }}"></div>
       <div><label>Minute (0–59)</label><input type="number" name="schedule_minute" min="0" max="59" value="{{ cfg.schedule_minute }}"></div>
     </div>
     <div class="check">
       <input type="checkbox" id="se" name="schedule_enabled" {% if cfg.schedule_enabled %}checked{% endif %}>
-      <label for="se" style="margin:0;">Enable daily scheduled run</label>
+      <label for="se" style="margin:0;">Enable daily delivery</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>Collection schedule (scrape new tweets)</strong>
+    <p class="muted" style="margin-top:4px;font-size:13px;">
+      Scrape the newest tweets into the archive every few hours so the digest builds up over the
+      day. Already-seen tweets are skipped, so frequent runs stay light.
+    </p>
+    <div class="row">
+      <div><label>Every (hours)</label><input type="number" name="collection_interval_hours" min="1" value="{{ cfg.collection_interval_hours }}"></div>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="ce" name="collection_enabled" {% if cfg.collection_enabled %}checked{% endif %}>
+      <label for="ce" style="margin:0;">Enable periodic collection</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>Processing schedule (live draft refresh)</strong>
+    <p class="muted" style="margin-top:4px;font-size:13px;">
+      Rebuild the “Today” draft digest (filter, thread, cluster, summarize) every few hours so the
+      portal shows the day so far. Renders only — nothing is emailed until the evening delivery.
+    </p>
+    <div class="row">
+      <div><label>Every (hours)</label><input type="number" name="process_interval_hours" min="1" value="{{ cfg.process_interval_hours }}"></div>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="pe" name="process_enabled" {% if cfg.process_enabled %}checked{% endif %}>
+      <label for="pe" style="margin:0;">Enable live draft refresh</label>
     </div>
   </div>
 

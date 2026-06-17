@@ -14,11 +14,34 @@ Unlike inquiro (which loops with verify/adjudicate steps for debugging), this is
 A single FastAPI process does everything:
 
 - Serves the **config UI** (HTML pages).
-- Hosts **APScheduler** (started in the FastAPI lifespan) which fires the daily pipeline.
-- Exposes a **"Run now"** action that triggers the same pipeline on demand.
+- Hosts **APScheduler** (started in the FastAPI lifespan) which fires the scheduled phases.
+- Exposes **"Run now"** plus **"Collect now" / "Refresh digest" / "Deliver now"** actions that
+  trigger the same code paths on demand.
 
-The CLI (`main.py`) can also run any piece headlessly (`init-db`, `login`, `run`, `resume`,
-`delete-run`, `archive-backfill`, `serve`).
+The CLI (`main.py`) can also run any piece headlessly (`init-db`, `login`, `run`, `ingest`,
+`process`, `deliver`, `resume`, `delete-run`, `archive-backfill`, `serve`).
+
+## Scheduling: collect / process / deliver
+
+The pipeline can run as one daily job or be split into **three independently-scheduled phases**
+so the portal shows the day as it builds up while delivery stays once-a-day:
+
+| Phase | When | What it does |
+|-------|------|--------------|
+| **Collect** (`pipeline.collect`) | every *N* hours (`collection_interval_hours`) | Scrape new tweets → `raw_tweets`. No filter/summary/delivery. The Collector early-stops on already-archived tweets, so frequent runs stay light and avoid re-hammering X. |
+| **Process** (`pipeline.refresh_draft`) | every *M* hours (`process_interval_hours`) | Rebuild the **live "Today" draft** digest from the archive window (Filter → Thread → Cluster → Summarize → render). `deliver=False`; **does not** persist tweets. Reuses one open `draft` run row so the portal shows a single growing digest. |
+| **Deliver** (`pipeline.deliver`) | once daily (`schedule_hour`/`minute`) | Re-process the window to be current, **send** (email/Telegram), `_persist_tweets` (commit cross-day dedup), index theme continuity, and finalize the draft → `success`. |
+
+The key invariant: **`_persist_tweets` runs only at delivery, never during processing.** So delivery
+is the dedup boundary — everything collected since the last delivery is "pending" and shown in every
+intraday refresh (a growing daily view, not disjoint slices); delivering flushes it so it won't
+repeat tomorrow. Theme continuity is likewise indexed only for the *finalized* (delivered) digest.
+
+**Modes** (`scheduler.reschedule`, re-applied live on settings save):
+- *Collection enabled* → the evening job is delivery-from-archive (`_deliver_job`); Collect and
+  Process run on their own `IntervalTrigger`s.
+- *Collection disabled* (default) → the evening job is the **legacy all-in-one** `run()` (scrape +
+  summarize + deliver inline) — unchanged behavior, so single-job setups are unaffected.
 
 ## Pipeline
 
@@ -37,7 +60,7 @@ Collector ─► Filter ─► [Threader] ─► [Clusterer] ─► Summarizer �
 
 | Agent | Responsibility |
 |-------|----------------|
-| **Collector** | Reuse saved browser session; enumerate the following list (minus the blocklist); scrape each account's tweets in the time window (text, timestamp, links, metrics) into the state. |
+| **Collector** | Reuse saved browser session; enumerate the following list (minus the blocklist); scrape each account's tweets in the time window (text, timestamp, links, metrics) into the state. **Early-stop dedup** (`skip_known`, on by default): loads the set of already-archived `tweet_id`s and stops scrolling an account once it reaches a known tweet (timelines are newest-first), so it fetches only genuinely new tweets — essential for the every-few-hours collection schedule. |
 | **Filter** | Drop exclude-keyword hits and empties; keep the time window; dedup within batch and against the `tweets` table (cross-day). |
 | **Threader** *(optional)* | Merge an author's self-reply chain into one item (text joined, max engagement, `member_ids` kept for dedup). `reply` mode (default) chains tweets flagged `is_self_reply` — accurate and gap-independent; `time` mode falls back to merging within `thread_gap_minutes`. Retweets / undated tweets pass through. |
 

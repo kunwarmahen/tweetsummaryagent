@@ -19,7 +19,7 @@ from agents import selectors
 from agents.base import Agent
 from agents.browser import launch_context, session_exists
 from auth.login import load_handle
-from db.models import AccountSetting, ExcludedAccount, ThreadMode
+from db.models import AccountSetting, ExcludedAccount, RawTweet, ThreadMode
 from db.session import get_session
 from state import DigestRun, TweetItem
 
@@ -78,15 +78,22 @@ def _parse_count(label: str | None) -> int:
 class Collector(Agent):
     name = "collector"
 
-    def __init__(self, ctx, max_accounts: int | None = None):
+    def __init__(self, ctx, max_accounts: int | None = None, skip_known: bool = True):
         super().__init__(ctx)
         self.max_accounts = max_accounts
+        self.skip_known = skip_known        # don't re-scrape tweets already in the archive
         self._limits: dict[str, int] = {}   # per-handle tweet caps, populated in run()
+        self._known: set[str] = set()       # tweet_ids already archived (early-stop scrolling)
 
     def _excluded_handles(self) -> set[str]:
         with get_session() as session:
             rows = session.exec(select(ExcludedAccount)).all()
         return {r.handle.lstrip("@").lower() for r in rows}
+
+    def _known_ids(self) -> set[str]:
+        """tweet_ids already in the raw archive — so frequent runs skip what we've seen."""
+        with get_session() as session:
+            return set(session.exec(select(RawTweet.tweet_id)).all())
 
     def _account_limits(self) -> dict[str, int]:
         """Per-handle max-tweets overrides (lowercased handle -> cap)."""
@@ -147,6 +154,7 @@ class Collector(Agent):
 
         items: dict[str, TweetItem] = {}
         max_per = self._max_for(handle)
+        reached_known = False
         for _ in range(15):  # scroll the profile timeline
             for raw in page.evaluate(_EXTRACT_JS):
                 item = self._to_item(raw, fallback_handle=handle)
@@ -159,11 +167,16 @@ class Collector(Agent):
                         continue
                     if item.reply_to and not item.is_self_reply:
                         continue
+                # Already archived → everything below is older and also archived, so we can
+                # stop scrolling once this page is processed (timeline is newest-first).
+                if self.skip_known and item.tweet_id in self._known:
+                    reached_known = True
+                    continue
                 created = datetime.fromisoformat(item.created_at.replace("Z", "+00:00"))
                 if created < cutoff:
                     continue
                 items[item.tweet_id] = item
-            if len(items) >= max_per:
+            if len(items) >= max_per or reached_known:
                 break
             self._scroll(page, rounds=1)
         return list(items.values())[:max_per]
@@ -209,6 +222,9 @@ class Collector(Agent):
         self._limits = self._account_limits()
         if self._limits:
             self.log.info("Per-account tweet limits set for %d account(s)", len(self._limits))
+        if self.skip_known:
+            self._known = self._known_ids()
+            self.log.info("Skipping %d already-archived tweets (early-stop on known)", len(self._known))
         include_rt = self.ctx.app_settings.include_retweets
         # Reply-based thread detection needs the "with replies" timeline (the Posts tab
         # hides thread continuations). Other modes use the cleaner Posts tab.
