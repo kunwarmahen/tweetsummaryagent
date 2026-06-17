@@ -209,6 +209,32 @@ def backfill_raw_archive() -> int:
     return total
 
 
+def _update_trends(run_id: int, state: DigestRun, app_settings) -> None:
+    """Refresh materialized trends after a real run. Best-effort: never fails the run.
+
+    Skipped for replays (they re-summarize already-archived tweets — no new data to aggregate).
+    Daily stats and theme continuity are independent: a failure in one won't block the other.
+    """
+    from agents import analytics
+
+    try:
+        analytics.recompute_daily_stats()
+    except Exception:
+        logger.exception("Daily-stats refresh failed for run %s (continuing)", run_id)
+
+    # Theme continuity is only meaningful for the themed digest style (titles are topics).
+    if getattr(app_settings, "digest_style", None) == DigestStyle.themed and state.themes:
+        try:
+            with get_session() as session:
+                analytics.index_run_themes(
+                    session, run_id, (state.started_at or "")[:10], state.themes,
+                    {t.tweet_id: (t.likes + t.retweets) for t in state.filtered_tweets},
+                    model=app_settings.embedding_model,
+                )
+        except Exception:
+            logger.exception("Theme indexing failed for run %s (continuing)", run_id)
+
+
 def _persist_tweets(run_id: int, state: DigestRun) -> None:
     """Store digested tweets so they're skipped on future days (cross-day dedup).
 
@@ -278,6 +304,7 @@ def run(max_accounts: int | None = None) -> DigestRun:
         _run_stages(ctx, state, start_after=None)
 
         _persist_tweets(run_id, state)
+        _update_trends(run_id, state, app_settings)
         _finish_run_row(run_id, state, RunStatus.success, None)
         logger.info("=== Digest run %s succeeded: %d tweets, %d themes -> %s ===",
                     run_id, len(state.filtered_tweets), len(state.themes), state.digest_path)
@@ -329,6 +356,7 @@ def resume(run_id: int | None = None) -> DigestRun | None:
         _archive_raw(run_id, state)   # idempotent; covers a run that failed before archiving
         _run_stages(ctx, state, start_after=stage)
         _persist_tweets(run_id, state)
+        _update_trends(run_id, state, app_settings)
         _finish_run_row(run_id, state, RunStatus.success, None)
         logger.info("=== Resumed run %s succeeded: %d tweets, %d themes -> %s ===",
                     run_id, len(state.filtered_tweets), len(state.themes), state.digest_path)

@@ -160,6 +160,26 @@ def cmd_archive_backfill(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_trends_rebuild(args: argparse.Namespace) -> int:
+    """Rebuild materialized trend tables from the archive + snapshots (safe to re-run)."""
+    import logging
+
+    from agents import analytics
+    from db.session import init_db
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    init_db()   # ensure the trend tables exist
+    days = analytics.recompute_daily_stats()
+    print(f"Rebuilt daily_stats: {days} day(s) of activity.")
+    if not args.no_themes:
+        try:
+            themes = analytics.rebuild_theme_history()
+            print(f"Rebuilt theme_history: {themes} theme(s) (embeddings via Ollama).")
+        except Exception as e:
+            print(f"Theme history skipped (needs Ollama running): {e}")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import logging
 
@@ -211,6 +231,12 @@ def build_parser() -> argparse.ArgumentParser:
     del_p = sub.add_parser("delete-run", help="Delete a run and all its data (tweets, archive, files)")
     del_p.add_argument("run_id", type=int, help="Run id to delete")
     del_p.set_defaults(func=cmd_delete_run)
+
+    trends_p = sub.add_parser("trends-rebuild",
+                              help="Rebuild trend tables from the archive + snapshots (daily_stats + themes)")
+    trends_p.add_argument("--no-themes", action="store_true",
+                          help="Only rebuild daily_stats; skip theme embedding (no Ollama needed)")
+    trends_p.set_defaults(func=cmd_trends_rebuild)
 
     serve = sub.add_parser("serve", help="Start the web UI + scheduler")
     serve.add_argument("--host", default="127.0.0.1")

@@ -29,6 +29,7 @@ can be replayed or debugged without re-scraping.
 - 🔁 **Crash-resilient runs** — every stage is snapshotted, so a run that fails after scraping can be **resumed** without re-scraping.
 - 🗄️ **Raw tweet archive** — every collected tweet (pre-filter) is stored for later analysis, surviving filtering and failures.
 - 🗑️ **Run management** — delete a run and all of its data (tweets, archive rows, digest, snapshots) from the CLI or UI.
+- 📈 **Trends dashboard** — a **Trends** page (and dashboard sparkline) charting tweets & engagement over time (Chart.js), an account leaderboard, top tweets, **recurring topics** tracked across runs via title embeddings, and a weekly **"This week in your feed"** LLM retrospective. Backfill with `python main.py trends-rebuild`.
 
 ## Quick start
 

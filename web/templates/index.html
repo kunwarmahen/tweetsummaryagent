@@ -35,6 +35,30 @@
   </div>
 </div>
 
+{% if sparkline.labels %}
+<div class="card">
+  <div class="flex-between" style="margin-bottom:12px;">
+    <strong>Tweets per day</strong>
+    <a href="/trends" class="muted" style="font-size:13px;text-decoration:none;">last 14 days · View trends →</a>
+  </div>
+  <div class="chart-box" style="height:90px;"><canvas id="sparkline"></canvas></div>
+</div>
+{% endif %}
+
+{% if trending %}
+<div class="card">
+  <div class="flex-between" style="margin-bottom:8px;">
+    <strong>Trending now</strong>
+    <a href="/trends" class="muted" style="font-size:13px;text-decoration:none;">All trends →</a>
+  </div>
+  <div class="muted" style="line-height:1.9;">
+    {% for t in trending %}
+    <div>🔥 {{ t.label }} <span style="font-size:12px;">· {{ t.days }} day{{ 's' if t.days != 1 else '' }}, {{ '{:,}'.format(t.engagement) }} engagement</span></div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <strong>Current config</strong>
   <div class="muted" style="margin-top:8px; line-height:1.8;">
@@ -45,4 +69,25 @@
     ({{ 'enabled' if cfg.schedule_enabled else 'disabled' }})
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if sparkline.labels %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const SPARK = {{ sparkline | tojson }};
+  new Chart(document.getElementById('sparkline'), {
+    type: 'line',
+    data: { labels: SPARK.labels, datasets: [{
+      data: SPARK.tweets, borderColor: '#1d9bf0', backgroundColor: '#1d9bf022',
+      fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { maxTicksLimit: 7 } } },
+    },
+  });
+</script>
+{% endif %}
 {% endblock %}

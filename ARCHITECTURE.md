@@ -116,6 +116,23 @@ replay — the `source_run_id`). The UI exposes this:
 | `digest_runs` | Run history: timestamp, status, tweet count, error — shown in the UI. |
 | `tweets` | Per-run cache of **digested** tweets; enables cross-day dedup and digest archives. |
 | `raw_tweets` | Append-only archive of **every** collected tweet (pre-filter), deduped by `tweet_id`; for analysis. Written right after collection, so it survives filtering and failures. |
+| `daily_stats` | Per-UTC-date aggregate over `raw_tweets` (tweets, accounts, likes/RTs, engagement), materialized for the trends charts. Rebuilt wholesale after each real run (idempotent). |
+| `theme_clusters` | Persistent cross-run **topic identity** for theme continuity — a label + first/last-seen + appearance count. A theme joins the cluster of its nearest prior theme (single-linkage on title embeddings). |
+| `theme_history` | One row per theme of every **original** run (title, summary, member count, engagement, unit title-embedding, `cluster_id`) — the raw material for trends. |
+| `meta_digests` | Stored weekly **"this week in your feed"** LLM narratives (markdown) over recent theme history. |
+
+### Trends & analytics (`agents/analytics.py`)
+
+Built mostly on `raw_tweets`. `recompute_daily_stats()` materializes the daily series; the
+account **leaderboard** and **top tweets** are live windowed queries. **Theme continuity**:
+`index_run_themes()` embeds each themed-run title (`nomic-embed-text`) and matches it
+single-linkage against the nearest *prior* theme (cosine > 0.62) — deliberately **not** an
+averaging centroid, which would collapse all themes into one blob since short title embeddings
+share a high baseline cosine. `trending_themes()` ranks clusters by distinct days seen then
+engagement. `generate_meta_digest()` feeds recent topics to the digest LLM for a markdown
+retrospective. Trends refresh after `run()`/`resume()` (replays skipped); the scheduler also
+runs the meta-digest **weekly** (Sundays). The **Trends** page renders charts via Chart.js (CDN)
+and the narrative via marked.js (CDN); the dashboard shows a 14-day sparkline + trending teaser.
 
 ## Directory layout
 
@@ -141,6 +158,7 @@ twitter_summary_agent/
 │   ├── summarizer.py            # Ollama summary — themed / per-account / highlights
 │   ├── reporter.py              # render + save + email (SMTP) + Telegram
 │   ├── telegram.py              # Telegram Bot API client + formatter
+│   ├── analytics.py             # trends: daily_stats, leaderboard, theme continuity, meta-digest
 │   └── util.py                  # extract_json helper
 ├── auth/login.py                # capture_handle() + manual login fallback
 ├── pipeline.py                  # orchestrator, run-lock, DigestRun row; resume / delete_run /
@@ -148,18 +166,18 @@ twitter_summary_agent/
 ├── scheduler.py                 # APScheduler (started in FastAPI lifespan)
 ├── web/
 │   ├── app.py                   # FastAPI app + lifespan starts scheduler
-│   ├── routes.py                # dashboard, accounts (+ per-account limits), settings, topics,
-│   │                            #   runs (run-now / resume / delete), digest
-│   └── templates/               # base, index, accounts, settings, runs, digest
+│   ├── routes.py                # dashboard, trends, accounts (+ per-account limits), settings,
+│   │                            #   topics, runs (run-now / resume / delete), digest
+│   └── templates/               # base, index, trends, accounts, settings, runs, digest
 ├── db/
 │   ├── models.py                # SQLModel tables + enums
 │   └── session.py               # engine, init_db, additive column migrations
 ├── tests/                       # pytest suite (util, telegram, filter, threader, summarizer
-│                                #   styles, clusterer, collector, recovery, archive, delete)
-│                                #   — no network/LLM; DB tests use an in-memory engine
+│                                #   styles, clusterer, collector, recovery, archive, delete,
+│                                #   analytics) — no network/LLM; DB tests use an in-memory engine
 ├── data/                        # state snapshots (runs/) + saved digests (digests/) + agent.db
 └── main.py                      # CLI: init-db | import-profile | login | collect | run |
-                                 #      resume | delete-run | archive-backfill |
+                                 #      resume | delete-run | archive-backfill | trends-rebuild |
                                  #      telegram-chatid | telegram-test | serve
 ```
 

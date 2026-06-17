@@ -24,6 +24,8 @@ is_running = pipeline.is_running
 # ---------------------------------------------------------------- Dashboard
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
+    from agents import analytics
+
     with get_session() as s:
         cfg = get_settings(s)
         last_run = s.exec(select(DigestRun).order_by(DigestRun.id.desc())).first()
@@ -31,10 +33,14 @@ def dashboard(request: Request):
         tweet_count = s.exec(select(func.count(Tweet.id))).one()
         raw_count = s.exec(select(func.count(RawTweet.id))).one()
         excluded_count = s.exec(select(func.count(ExcludedAccount.id))).one()
+        spark = analytics.daily_series(s, days=14)
+        trending = analytics.trending_themes(s, days=7, limit=3)
+    sparkline = {"labels": [d.date for d in spark], "tweets": [d.tweet_count for d in spark]}
     return templates.TemplateResponse(request, "index.html", {
         "cfg": cfg, "last_run": last_run,
         "run_count": run_count, "tweet_count": tweet_count, "raw_count": raw_count,
         "excluded_count": excluded_count, "running": is_running(),
+        "sparkline": sparkline, "trending": trending,
     })
 
 
@@ -104,6 +110,38 @@ def rerun_run(run_id: int, background_tasks: BackgroundTasks,
     if not is_running():
         background_tasks.add_task(pipeline.replay_guarded, run_id, overrides, deliver is not None)
     return RedirectResponse("/runs", status_code=303)
+
+
+# ---------------------------------------------------------------- Trends
+@router.get("/trends", response_class=HTMLResponse)
+def trends(request: Request):
+    from agents import analytics
+
+    with get_session() as s:
+        series = analytics.daily_series(s, days=30)
+        leaders = analytics.account_leaderboard(s, days=7)
+        tops = analytics.top_tweets(s, days=7)
+        trending = analytics.trending_themes(s, days=7)
+        meta = analytics.latest_meta_digest(s)
+    chart = {
+        "labels": [d.date for d in series],
+        "tweets": [d.tweet_count for d in series],
+        "engagement": [d.engagement for d in series],
+        "accounts": [d.account_count for d in series],
+    }
+    return templates.TemplateResponse(request, "trends.html", {
+        "chart": chart, "leaders": leaders, "tops": tops, "trending": trending,
+        "meta": meta, "meta_running": analytics.is_meta_running(),
+        "has_data": bool(series), "running": is_running(),
+    })
+
+
+@router.post("/trends/meta-digest")
+def regenerate_meta_digest(background_tasks: BackgroundTasks):
+    from agents import analytics
+    if not analytics.is_meta_running():
+        background_tasks.add_task(analytics.generate_meta_digest_guarded, 7)
+    return RedirectResponse("/trends", status_code=303)
 
 
 # ---------------------------------------------------------------- Accounts

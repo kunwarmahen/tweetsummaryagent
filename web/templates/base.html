@@ -46,6 +46,10 @@
   .muted { color:var(--muted); }
   .flex-between { display:flex; justify-content:space-between; align-items:center; }
   form.inline { display:inline; }
+  /* Bounds Chart.js height — without a sized, positioned parent a responsive canvas
+     grows taller on every resize tick. */
+  .chart-box { position:relative; height:220px; width:100%; }
+  .chart-box canvas { position:absolute; inset:0; }
 </style>
 </head>
 <body>
@@ -53,6 +57,7 @@
   <nav>
     <h1>🐦 Summary Agent</h1>
     <a href="/" class="{% if active=='home' %}active{% endif %}">Dashboard</a>
+    <a href="/trends" class="{% if active=='trends' %}active{% endif %}">Trends</a>
     <a href="/accounts" class="{% if active=='accounts' %}active{% endif %}">Accounts</a>
     <a href="/settings" class="{% if active=='settings' %}active{% endif %}">Settings</a>
     <a href="/runs" class="{% if active=='runs' %}active{% endif %}">Runs</a>
@@ -61,5 +66,6 @@
     {% block content %}{% endblock %}
   </main>
 </div>
+{% block scripts %}{% endblock %}
 </body>
 </html>

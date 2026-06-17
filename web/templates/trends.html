@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% set active = 'trends' %}
+{% block content %}
+<h2>Trends</h2>
+<p class="sub">What your feed has looked like over time — built from the tweet archive.</p>
+
+<div class="card">
+  <div class="flex-between" style="margin-bottom:6px;">
+    <strong>This week in your feed</strong>
+    <form class="inline" method="post" action="/trends/meta-digest">
+      <button class="btn-sm btn-ghost" {% if meta_running %}disabled{% endif %}>
+        {{ 'Generating…' if meta_running else ('Regenerate' if meta else 'Generate') }}
+      </button>
+    </form>
+  </div>
+  {% if meta %}
+  <div id="metaNarrative" data-md="{{ meta.narrative }}" class="meta-narrative"></div>
+  <div class="muted" style="font-size:12px;margin-top:10px;">
+    {{ meta.period_start }} → {{ meta.period_end }} ·
+    {{ meta.generated_at.strftime('%Y-%m-%d %H:%M') }} UTC{% if meta.model %} · {{ meta.model }}{% endif %}
+  </div>
+  {% else %}
+  <div class="muted">No retrospective yet. Click <strong>Generate</strong> to write one over the
+  last 7 days of themes (uses your local LLM), or it runs automatically every Sunday.</div>
+  {% endif %}
+</div>
+
+{% if not has_data %}
+<div class="card">
+  <div class="muted">No activity yet. Trends appear after your first run captures tweets
+  (or run <code>python main.py trends-rebuild</code> if you've backfilled the archive).</div>
+</div>
+{% else %}
+
+<div class="card">
+  <div class="flex-between" style="margin-bottom:12px;">
+    <strong>Tweets per day</strong><span class="muted">last 30 days</span>
+  </div>
+  <div class="chart-box"><canvas id="tweetsChart"></canvas></div>
+</div>
+
+<div class="card">
+  <div class="flex-between" style="margin-bottom:12px;">
+    <strong>Engagement per day</strong><span class="muted">likes + retweets, last 30 days</span>
+  </div>
+  <div class="chart-box"><canvas id="engagementChart"></canvas></div>
+</div>
+
+<div class="card">
+  <div class="flex-between" style="margin-bottom:6px;">
+    <strong>Trending themes</strong><span class="muted">recurring topics, last 7 days</span>
+  </div>
+  {% if trending %}
+  <table>
+    <thead><tr><th>Topic</th><th>Days seen</th><th>Mentions</th><th>Engagement</th></tr></thead>
+    <tbody>
+      {% for t in trending %}
+      <tr>
+        <td>{{ t.label }}</td>
+        <td>{{ t.days }}</td>
+        <td>{{ t.appearances }}</td>
+        <td>{{ '{:,}'.format(t.engagement) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="muted">No themes tracked yet — they accrue from themed runs (or run
+  <code>python main.py trends-rebuild</code> with Ollama up to backfill).</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="flex-between" style="margin-bottom:6px;">
+    <strong>Most active accounts</strong><span class="muted">last 7 days</span>
+  </div>
+  {% if leaders %}
+  <table>
+    <thead><tr><th>Account</th><th>Tweets</th><th>Engagement</th></tr></thead>
+    <tbody>
+      {% for a in leaders %}
+      <tr>
+        <td><a href="https://x.com/{{ a.handle }}" target="_blank" rel="noopener">@{{ a.handle }}</a>
+            <span class="muted">{{ a.author_name }}</span></td>
+        <td>{{ a.tweets }}</td>
+        <td>{{ '{:,}'.format(a.engagement) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="muted">No tweets in the last 7 days.</div>{% endif %}
+</div>
+
+<div class="card">
+  <div class="flex-between" style="margin-bottom:6px;">
+    <strong>Top tweets</strong><span class="muted">by engagement, last 7 days</span>
+  </div>
+  {% if tops %}
+  <table>
+    <thead><tr><th>Tweet</th><th>❤</th><th>🔁</th></tr></thead>
+    <tbody>
+      {% for t in tops %}
+      <tr>
+        <td>
+          <a href="{{ t.url }}" target="_blank" rel="noopener">@{{ t.handle }}</a> —
+          {{ (t.text or '')[:140] }}{% if (t.text or '')|length > 140 %}…{% endif %}
+        </td>
+        <td>{{ '{:,}'.format(t.likes) }}</td>
+        <td>{{ '{:,}'.format(t.retweets) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="muted">No tweets in the last 7 days.</div>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if has_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const CHART = {{ chart | tojson }};
+  const BLUE = '#1d9bf0';
+  const common = (label, data, color) => ({
+    type: 'line',
+    data: { labels: CHART.labels, datasets: [{
+      label, data, borderColor: color, backgroundColor: color + '22',
+      fill: true, tension: 0.3, pointRadius: 2, borderWidth: 2,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+  new Chart(document.getElementById('tweetsChart'), common('Tweets', CHART.tweets, BLUE));
+  new Chart(document.getElementById('engagementChart'), common('Engagement', CHART.engagement, '#e0245e'));
+</script>
+{% endif %}
+{% if meta %}
+<style>
+  .meta-narrative { line-height:1.7; font-size:15px; }
+  .meta-narrative h2 { font-size:18px; margin:0 0 10px; }
+  .meta-narrative p { margin:0 0 12px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<script>
+  const el = document.getElementById('metaNarrative');
+  if (el) el.innerHTML = marked.parse(el.dataset.md || '');
+</script>
+{% endif %}
+{% endblock %}

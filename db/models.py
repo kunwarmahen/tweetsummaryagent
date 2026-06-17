@@ -144,6 +144,77 @@ class RawTweet(SQLModel, table=True):
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class DailyStat(SQLModel, table=True):
+    """Per-UTC-date aggregate over `raw_tweets`, materialized for the trends charts.
+
+    Rebuilt wholesale from `raw_tweets` (idempotent) after each real run — see
+    agents/analytics.recompute_daily_stats. Tweets without a parseable created_at are skipped
+    (they can't be placed on a day).
+    """
+    __tablename__ = "daily_stats"
+
+    date: str = Field(primary_key=True)   # 'YYYY-MM-DD' (UTC), from date(created_at)
+    tweet_count: int = 0
+    account_count: int = 0                 # distinct handles that day
+    total_likes: int = 0
+    total_retweets: int = 0
+    engagement: int = 0                    # likes + retweets
+    retweet_count: int = 0
+    self_reply_count: int = 0
+
+
+class TopicCluster(SQLModel, table=True):
+    """Persistent cross-run topic identity for theme continuity.
+
+    A digest theme joins the cluster of its nearest prior theme (single-linkage on title
+    embeddings, cosine > threshold) or starts a new cluster. Single-linkage — rather than an
+    averaging centroid — is deliberate: nomic title embeddings share a high baseline cosine, so
+    a running centroid regresses to a generic direction and swallows everything. Powers the
+    "trending themes" view — see agents/analytics.
+    """
+    __tablename__ = "theme_clusters"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    label: str = ""                        # latest theme title in this cluster
+    first_seen: Optional[str] = None       # 'YYYY-MM-DD'
+    last_seen: Optional[str] = None        # 'YYYY-MM-DD'
+    appearance_count: int = 0              # number of themes folded in
+
+
+class ThemeHistory(SQLModel, table=True):
+    """One row per theme of every original (non-replay) run — the raw material for trends.
+
+    Stores the theme's unit title-embedding so later runs can match against it (single-linkage).
+    """
+    __tablename__ = "theme_history"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: Optional[int] = Field(default=None, foreign_key="digest_runs.id")
+    run_date: str = Field(index=True)      # 'YYYY-MM-DD' (UTC)
+    title: str = ""
+    summary: str = ""
+    member_count: int = 0
+    engagement: int = 0                    # sum of member tweets' likes+retweets
+    embedding_json: str = "[]"             # unit title embedding (JSON list of floats)
+    cluster_id: Optional[int] = Field(default=None, foreign_key="theme_clusters.id", index=True)
+
+
+class MetaDigest(SQLModel, table=True):
+    """An LLM 'this week in your feed' narrative over recent theme history.
+
+    Generated weekly by the scheduler and on demand from the Trends page (Regenerate). The
+    latest row is shown on /trends. Stored as markdown.
+    """
+    __tablename__ = "meta_digests"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    period_start: str = ""                 # 'YYYY-MM-DD'
+    period_end: str = ""                   # 'YYYY-MM-DD'
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    narrative: str = ""                    # markdown
+    model: Optional[str] = None
+
+
 class Tweet(SQLModel, table=True):
     """Per-run tweet cache — enables cross-day dedup and digest archives."""
     __tablename__ = "tweets"
