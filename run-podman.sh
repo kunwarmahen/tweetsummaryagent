@@ -17,9 +17,12 @@ if [[ ! -f auth/storage_state.json ]]; then
 fi
 
 IMAGE=twitter-summary-agent
-# UI port — override by exporting APP_PORT before running (e.g. APP_PORT=9000 ./run-podman.sh).
-# Default 8765 avoids the common 8000 clash. Host networking, so this is the host port directly.
-APP_PORT="${APP_PORT:-8765}"
+# Resolve the UI port with precedence: shell env > .env > built-in default (8765).
+# (Podman's -e wins over --env-file, so we must read .env ourselves to honor it.)
+if [[ -z "${APP_PORT:-}" && -f .env ]]; then
+  APP_PORT="$(sed -n 's/^[[:space:]]*APP_PORT=//p' .env | tail -n1 | tr -d '[:space:]')"
+fi
+APP_PORT="${APP_PORT:-8765}"   # default avoids the common 8000 clash; host networking = host port
 
 echo "Building $IMAGE…"
 podman build -t "$IMAGE" .
@@ -29,7 +32,6 @@ podman run -d --replace --name "$IMAGE" \
   --network=host \
   --env-file .env \
   -e OLLAMA_URL=http://localhost:11434 \
-  -e APP_HOST=0.0.0.0 \
   -e APP_PORT="$APP_PORT" \
   -v "$(pwd)/data:/app/data:Z" \
   -v "$(pwd)/auth:/app/auth:ro,Z" \

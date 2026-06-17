@@ -7,11 +7,9 @@ services:
     image: twitter-summary-agent
     container_name: twitter-summary-agent
     network_mode: host
-    env_file: .env
+    env_file: .env                   # APP_HOST/APP_PORT come from here (or the image default 8765)
     environment:
       - OLLAMA_URL=http://localhost:11434
-      - APP_HOST=0.0.0.0
-      - APP_PORT=${APP_PORT:-8765}   # UI port; avoids the common 8000 clash
     volumes:
       - ./data:/app/data:Z          # DB, run snapshots, saved digests (read-write)
       - ./auth:/app/auth:ro,Z       # session imported on the host (read-only)
