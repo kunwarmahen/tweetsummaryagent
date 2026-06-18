@@ -97,7 +97,9 @@ Open the printed HTML file in a browser to see your themed digest.
 - **Activity** — history of both background schedules — **collection** (scrape) and **processing**
   (draft refresh): type, status, trigger (schedule vs manual), start time, and counts. Shows the
   **next run time** for each schedule, and logs every cycle including ones that found nothing new,
-  so you can see the actual cadence.
+  so you can see the actual cadence. Each draft-refresh row has a **View** link to the interim
+  digest *as it looked at that time* — so you can revisit earlier drafts from during the day, not
+  just the current one. **Backfill old snapshots** registers digests saved before this logging existed.
 
 ## Schedules + email
 The scheduler runs inside `serve` — keep that process alive. There are two ways to run it:

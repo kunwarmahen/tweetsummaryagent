@@ -53,6 +53,9 @@ _MIGRATIONS = {
         "important": "BOOLEAN DEFAULT 0",
         "color": "VARCHAR",
     },
+    "job_runs": {
+        "digest_path": "VARCHAR",
+    },
 }
 
 

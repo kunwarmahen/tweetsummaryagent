@@ -278,6 +278,13 @@ def archive_backfill(background_tasks: BackgroundTasks):
     return RedirectResponse("/settings", status_code=303)
 
 
+@router.post("/maintenance/backfill-snapshots")
+def backfill_snapshots():
+    """Register on-disk interim digest snapshots that predate per-cycle logging."""
+    pipeline.backfill_job_runs()
+    return RedirectResponse("/activity", status_code=303)
+
+
 @router.post("/maintenance/reset-runs")
 def reset_runs_route():
     """Wipe ALL run data (keeps settings/accounts/topics). Backs up the DB first."""
@@ -553,7 +560,9 @@ def runs(request: Request):
 def activity(request: Request):
     """History + next-run times for the background schedules (collection & processing)."""
     with get_session() as s:
-        rows = s.exec(select(JobRun).order_by(JobRun.id.desc()).limit(200)).all()
+        rows = s.exec(
+            select(JobRun).order_by(JobRun.started_at.desc()).limit(200)
+        ).all()
     nxt = scheduler.next_run_times()
     return templates.TemplateResponse(request, "activity.html", {
         "jobs": rows, "running": is_running(),
@@ -569,3 +578,18 @@ def view_digest(run_id: int):
     if not row or not row.digest_path or not Path(row.digest_path).exists():
         return HTMLResponse("<p>Digest not found.</p>", status_code=404)
     return HTMLResponse(Path(row.digest_path).read_text())
+
+
+@router.get("/activity/{job_id}/digest", response_class=HTMLResponse)
+def view_job_digest(job_id: int):
+    """Serve the interim digest snapshot a draft-refresh cycle rendered (frozen in time)."""
+    with get_session() as s:
+        row = s.get(JobRun, job_id)
+    if not row or not row.digest_path:
+        return HTMLResponse("<p>Digest not found.</p>", status_code=404)
+    # Containment guard: only serve files under data/digests/ (paths come from our Reporter).
+    base = (Path("data") / "digests").resolve()
+    path = Path(row.digest_path).resolve()
+    if base not in path.parents or not path.is_file():
+        return HTMLResponse("<p>Digest not found.</p>", status_code=404)
+    return HTMLResponse(path.read_text())

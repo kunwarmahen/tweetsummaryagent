@@ -154,6 +154,7 @@ class JobRun(SQLModel, table=True):
     trigger: str = "schedule"            # 'schedule' | 'manual'
     primary_count: int = 0
     secondary_count: int = 0
+    digest_path: Optional[str] = None    # process cycles: the interim digest HTML they rendered
     error: Optional[str] = None
 
 

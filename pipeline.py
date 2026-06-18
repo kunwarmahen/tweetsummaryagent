@@ -437,7 +437,7 @@ def _start_job_run(job: str, trigger: str) -> int:
 
 
 def _finish_job_run(job_run_id: int, primary: int, secondary: int,
-                    status: str, error: str | None) -> None:
+                    status: str, error: str | None, digest_path: str | None = None) -> None:
     with get_session() as session:
         row = session.get(JobRun, job_run_id)
         if row is None:
@@ -447,8 +447,60 @@ def _finish_job_run(job_run_id: int, primary: int, secondary: int,
         row.secondary_count = secondary
         row.status = status
         row.error = error
+        row.digest_path = digest_path
         session.add(row)
         session.commit()
+
+
+def backfill_job_runs() -> int:
+    """Register interim digest snapshots on disk that predate per-cycle digest logging.
+
+    Each draft refresh has always saved a timestamped HTML, but only since job_runs carried a
+    digest_path are they linked, so earlier interim drafts aren't viewable on the Activity page.
+    For each unreferenced snapshot we first try to **attach** it to an existing process run that
+    logged but never recorded its snapshot (render time within 10 min of the run start) — that
+    run keeps its real counts and gains a view link. Only genuinely orphaned files get a fresh
+    trigger='backfill' row (counts unrecoverable → UI shows '—'), dated from the file mtime
+    (true UTC). Idempotent. Returns the number of new rows added.
+    """
+    from pathlib import Path
+    from sqlmodel import select
+
+    digests_dir = Path(settings.data_dir) / "digests"
+    if not digests_dir.is_dir():
+        return 0
+    with get_session() as session:
+        linked = {Path(p).resolve()
+                  for p in session.exec(select(JobRun.digest_path)).all() if p}
+        orphan_runs = session.exec(
+            select(JobRun).where(JobRun.job == "process", JobRun.digest_path.is_(None))
+            .order_by(JobRun.started_at)
+        ).all()
+        snapshots = []
+        for f in sorted(digests_dir.glob("digest_*.html")):
+            if f.resolve() in linked:
+                continue
+            mtime = datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).replace(
+                tzinfo=None, microsecond=0)
+            snapshots.append((mtime, f))
+
+        attached, added, used = 0, 0, set()
+        for mtime, f in snapshots:
+            run = next((r for r in orphan_runs if r.id not in used
+                        and r.started_at <= mtime <= r.started_at + timedelta(minutes=10)), None)
+            if run is not None:
+                run.digest_path = str(f)
+                session.add(run)
+                used.add(run.id)
+                attached += 1
+            else:
+                session.add(JobRun(job="process", trigger="backfill", status="ok",
+                                   started_at=mtime, finished_at=mtime, digest_path=str(f)))
+                added += 1
+        session.commit()
+    logger.info("Backfill: attached %d snapshot(s) to existing runs, added %d backfill row(s)",
+                attached, added)
+    return added
 
 
 def _create_draft_row() -> int:
@@ -522,7 +574,8 @@ def refresh_draft(trigger: str = "schedule") -> DigestRun | None:
         raise
     logger.info("=== Draft refresh (run %s) done: %d tweets, %d themes -> %s ===",
                 run_id, len(state.filtered_tweets), len(state.themes), state.digest_path)
-    _finish_job_run(job_id, len(state.filtered_tweets), len(state.themes), "ok", None)
+    _finish_job_run(job_id, len(state.filtered_tweets), len(state.themes), "ok", None,
+                    digest_path=state.digest_path)
     return state
 
 

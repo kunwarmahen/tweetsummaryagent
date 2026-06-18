@@ -124,8 +124,11 @@ it survives filtering and pipeline failures. SQLite handles this comfortably at 
   failed run (re-runs the remaining stages from the saved scrape), or **Delete** a run + its data.
 - **Activity** — history of both background schedules — collection (scrape) and processing (draft
   refresh) — with status, trigger (schedule vs manual), and counts, plus the **next run time** for
-  each. Includes idle cycles that found nothing new, so the real cadence is visible. The collect/draft
-  intervals are anchored to local midnight (restart-safe) and jittered ±20 min so the times look human.
+  each. Includes idle cycles that found nothing new, so the real cadence is visible. Each draft
+  refresh links to the **interim digest it rendered** (revisit earlier drafts from the day); a
+  **Backfill old snapshots** button registers digests saved before this logging existed. The
+  collect/draft intervals are anchored to local midnight (restart-safe) and jittered ±20 min so the
+  times look human.
 
 ## Run in a container (Podman / Docker)
 

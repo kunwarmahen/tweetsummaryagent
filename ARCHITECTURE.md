@@ -150,7 +150,13 @@ replay — the `source_run_id`). The UI exposes this:
   (collection / draft refresh), status, trigger (schedule vs manual), start time, and per-type
   counts (collect: scraped/new; process: tweets/themes), plus the **next run time** for each
   schedule (`scheduler.next_run_times`). Includes idle cycles that found nothing new, so the real
-  cadence is visible (unlike `raw_tweets` or the reused draft row, which hide idle fires).
+  cadence is visible (unlike `raw_tweets` or the reused draft row, which hide idle fires). Each
+  draft-refresh row links (`/activity/{id}/digest`, containment-guarded to `data/digests/`) to the
+  **interim digest it rendered** — frozen in time — so you can revisit the digest as it looked at
+  any point in the day, not just the current draft. A **Backfill old snapshots** button
+  (`pipeline.backfill_job_runs`) registers on-disk snapshots that predate per-cycle logging:
+  it attaches each to the process run that produced it (matched by render time) or, if none,
+  adds a `trigger='backfill'` row (counts unrecoverable → shown as "—").
 - **Run detail** (`/runs/{id}`) — shows what the run did (params, theme titles/summaries from the
   `3_summarized` snapshot, accounts captured, delivery), the digest, and a **re-run form**.
 - **Re-run (replay)** — `replay()` reloads the source run's post-thread snapshot (`2a_threaded` /

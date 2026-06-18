@@ -8,6 +8,10 @@
     <h2>Activity</h2>
     <p class="sub">Background schedule history — scrape cycles and live-draft refreshes.</p>
   </div>
+  <form class="inline" method="post" action="/maintenance/backfill-snapshots"
+        title="Register interim digest snapshots saved on disk before per-cycle logging existed">
+    <button class="btn-sm">Backfill old snapshots</button>
+  </form>
 </div>
 
 <div class="row">
@@ -34,7 +38,7 @@
 <div class="card">
   {% if jobs %}
   <table>
-    <tr><th>#</th><th>Type</th><th>Status</th><th>Trigger</th><th>Started</th><th>Result</th></tr>
+    <tr><th>#</th><th>Type</th><th>Status</th><th>Trigger</th><th>Started</th><th>Result</th><th>Digest</th></tr>
     {% for j in jobs %}
     <tr>
       <td>#{{ j.id }}</td>
@@ -43,13 +47,18 @@
       <td class="muted">{{ j.trigger }}</td>
       <td class="muted">{{ j.started_at | localtime }}</td>
       <td>
-        {% if j.status == 'skipped' %}<span class="muted">nothing in window</span>
+        {% if j.trigger == 'backfill' %}<span class="muted">— (counts unavailable)</span>
+        {% elif j.status == 'skipped' %}<span class="muted">nothing in window</span>
         {% elif j.job == 'collect' %}{{ j.primary_count }} scraped · {{ j.secondary_count }} new
         {% else %}{{ j.primary_count }} tweets · {{ j.secondary_count }} themes{% endif %}
       </td>
+      <td>
+        {% if j.digest_path %}<a href="/activity/{{ j.id }}/digest" target="_blank">View</a>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
     </tr>
     {% if j.error %}
-    <tr><td></td><td colspan="5" class="muted" style="color:#c81e1e;">{{ j.error }}</td></tr>
+    <tr><td></td><td colspan="6" class="muted" style="color:#c81e1e;">{{ j.error }}</td></tr>
     {% endif %}
     {% endfor %}
   </table>
