@@ -28,8 +28,12 @@ so the portal shows the day as it builds up while delivery stays once-a-day:
 
 | Phase | When | What it does |
 |-------|------|--------------|
-| **Collect** (`pipeline.collect`) | every *N* hours (`collection_interval_hours`) | Scrape new tweets → `raw_tweets`. No filter/summary/delivery. The Collector early-stops on already-archived tweets, so frequent runs stay light and avoid re-hammering X. Each cycle records a `collection_runs` row (even on zero-new or error) so the schedule's cadence is auditable on the **Collections** page. |
+| **Collect** (`pipeline.collect`) | every *N* hours (`collection_interval_hours`) | Scrape new tweets → `raw_tweets`. No filter/summary/delivery. The Collector early-stops on already-archived tweets, so frequent runs stay light and avoid re-hammering X. |
 | **Process** (`pipeline.refresh_draft`) | every *M* hours (`process_interval_hours`) | Rebuild the **live "Today" draft** digest from the archive window (Filter → Thread → Cluster → Summarize → render). `deliver=False`; **does not** persist tweets. Reuses one open `draft` run row so the portal shows a single growing digest. |
+
+Both background phases log a `job_runs` row per fire (even on no-op/error) so each schedule's real
+cadence is auditable on the **Activity** page, independent of the `digest_runs`/`draft` row a process
+cycle reuses or the `raw_tweets` a collect cycle appends to.
 | **Deliver** (`pipeline.deliver`) | once daily (`schedule_hour`/`minute`, in `timezone`) | Re-process the window to be current, **send** (email/Telegram), `_persist_tweets` (commit cross-day dedup), index theme continuity, and finalize the draft → `success`. |
 
 The key invariant: **`_persist_tweets` runs only at delivery, never during processing.** So delivery
@@ -142,10 +146,11 @@ Every run snapshots its state per stage to `data/runs/{id}/` and records its **p
 replay — the `source_run_id`). The UI exposes this:
 
 - **Runs list** — each run links to a detail page; replays are marked.
-- **Collections list** (`/collections`) — history of scrape cycles (`collection_runs`): status,
-  trigger (schedule vs manual), start time, scraped & newly-archived counts. Includes runs that
-  found nothing new, so the schedule's real cadence is visible (unlike `raw_tweets`, which only
-  grows on new captures).
+- **Activity list** (`/activity`) — history of both background schedules (`job_runs`): type
+  (collection / draft refresh), status, trigger (schedule vs manual), start time, and per-type
+  counts (collect: scraped/new; process: tweets/themes), plus the **next run time** for each
+  schedule (`scheduler.next_run_times`). Includes idle cycles that found nothing new, so the real
+  cadence is visible (unlike `raw_tweets` or the reused draft row, which hide idle fires).
 - **Run detail** (`/runs/{id}`) — shows what the run did (params, theme titles/summaries from the
   `3_summarized` snapshot, accounts captured, delivery), the digest, and a **re-run form**.
 - **Re-run (replay)** — `replay()` reloads the source run's post-thread snapshot (`2a_threaded` /
@@ -167,7 +172,7 @@ replay — the `source_run_id`). The UI exposes this:
 | `digest_runs` | Run history: timestamp (stored UTC, shown in the configured `timezone`), status, tweet count, error — shown in the UI. |
 | `tweets` | Per-run cache of **digested** tweets; enables cross-day dedup and digest archives. |
 | `raw_tweets` | Append-only archive of **every** collected tweet (pre-filter), deduped by `tweet_id`; for analysis. Written right after collection, so it survives filtering and failures. |
-| `collection_runs` | One row per scrape cycle (Phase 1) — start/finish, scraped & newly-archived counts, trigger (schedule/manual), status, error. Written even on zero-new or error, so the schedule cadence is auditable on the **Collections** page. |
+| `job_runs` | One row per background-schedule cycle — `job` (`collect`/`process`), start/finish, trigger (schedule/manual), status (`ok`/`skipped`/`error`), and two contextual counts (collect: scraped & newly-archived; process: tweets & themes). Written even on no-op or error, so each schedule's cadence is auditable on the **Activity** page. |
 | `daily_stats` | Per-UTC-date aggregate over `raw_tweets` (tweets, accounts, likes/RTs, engagement), materialized for the trends charts. Rebuilt wholesale after each real run (idempotent). |
 | `theme_clusters` | Persistent cross-run **topic identity** for theme continuity — a label + first/last-seen + appearance count. A theme joins the cluster of its nearest prior theme (single-linkage on title embeddings). |
 | `theme_history` | One row per theme of every **original** run (title, summary, member count, engagement, unit title-embedding, `cluster_id`) — the raw material for trends. |
@@ -219,8 +224,8 @@ twitter_summary_agent/
 ├── web/
 │   ├── app.py                   # FastAPI app + lifespan starts scheduler
 │   ├── routes.py                # dashboard, trends, accounts (+ per-account limits), settings,
-│   │                            #   topics, runs (run-now / resume / delete), collections, digest
-│   └── templates/               # base, index, trends, accounts, settings, runs, collections, digest
+│   │                            #   topics, runs (run-now / resume / delete), activity, digest
+│   └── templates/               # base, index, trends, accounts, settings, runs, activity, digest
 ├── db/
 │   ├── models.py                # SQLModel tables + enums
 │   └── session.py               # engine, init_db, additive column migrations

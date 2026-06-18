@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set active = 'activity' %}
+{% set pill = {'ok': 'success', 'error': 'failed', 'running': 'running', 'skipped': 'pending'} %}
+{% set label = {'collect': 'Collection', 'process': 'Draft refresh'} %}
+{% block content %}
+<div class="flex-between">
+  <div>
+    <h2>Activity</h2>
+    <p class="sub">Background schedule history — scrape cycles and live-draft refreshes.</p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" style="flex:1;">
+    <strong>Collection</strong>
+    <p class="muted" style="margin:6px 0 10px;font-size:13px;">
+      Next run: <strong>{{ (next_collect | localtime) or 'not scheduled' }}</strong>
+    </p>
+    <form class="inline" method="post" action="/collect-now">
+      <button class="btn-sm" {% if running %}disabled{% endif %}>Collect now</button>
+    </form>
+  </div>
+  <div class="card" style="flex:1;">
+    <strong>Processing (live draft refresh)</strong>
+    <p class="muted" style="margin:6px 0 10px;font-size:13px;">
+      Next run: <strong>{{ (next_process | localtime) or 'not scheduled' }}</strong>
+    </p>
+    <form class="inline" method="post" action="/refresh-now">
+      <button class="btn-sm" {% if running %}disabled{% endif %}>Refresh draft now</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  {% if jobs %}
+  <table>
+    <tr><th>#</th><th>Type</th><th>Status</th><th>Trigger</th><th>Started</th><th>Result</th></tr>
+    {% for j in jobs %}
+    <tr>
+      <td>#{{ j.id }}</td>
+      <td>{{ label.get(j.job, j.job) }}</td>
+      <td><span class="pill {{ pill.get(j.status, 'pending') }}">{{ j.status }}</span></td>
+      <td class="muted">{{ j.trigger }}</td>
+      <td class="muted">{{ j.started_at | localtime }}</td>
+      <td>
+        {% if j.status == 'skipped' %}<span class="muted">nothing in window</span>
+        {% elif j.job == 'collect' %}{{ j.primary_count }} scraped · {{ j.secondary_count }} new
+        {% else %}{{ j.primary_count }} tweets · {{ j.secondary_count }} themes{% endif %}
+      </td>
+    </tr>
+    {% if j.error %}
+    <tr><td></td><td colspan="5" class="muted" style="color:#c81e1e;">{{ j.error }}</td></tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No activity yet. Enable the Collection / Processing schedules in Settings, or use the buttons above.</p>
+  {% endif %}
+</div>
+{% endblock %}

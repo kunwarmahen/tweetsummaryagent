@@ -12,8 +12,9 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import func, select
 
 import pipeline
-from db.models import (AccountSetting, AppSettings, ClusteringMethod, CollectionRun,
-                       DigestRun, DigestStyle, ExcludedAccount, RawTweet, ThreadMode,
+import scheduler
+from db.models import (AccountSetting, AppSettings, ClusteringMethod, DigestRun,
+                       DigestStyle, ExcludedAccount, JobRun, RawTweet, ThreadMode,
                        Topic, Tweet)
 from db.session import get_session, get_settings
 
@@ -112,7 +113,7 @@ def collect_now(background_tasks: BackgroundTasks):
 def refresh_now(background_tasks: BackgroundTasks):
     """Phase 2: rebuild the live draft digest (no delivery)."""
     if not is_running():
-        background_tasks.add_task(pipeline.refresh_draft_guarded)
+        background_tasks.add_task(pipeline.refresh_draft_guarded, trigger="manual")
     return RedirectResponse("/", status_code=303)
 
 
@@ -548,15 +549,16 @@ def runs(request: Request):
     })
 
 
-@router.get("/collections", response_class=HTMLResponse)
-def collections(request: Request):
-    """History of scrape (collection) cycles — the schedule's actual cadence."""
+@router.get("/activity", response_class=HTMLResponse)
+def activity(request: Request):
+    """History + next-run times for the background schedules (collection & processing)."""
     with get_session() as s:
-        rows = s.exec(
-            select(CollectionRun).order_by(CollectionRun.id.desc()).limit(200)
-        ).all()
-    return templates.TemplateResponse(request, "collections.html", {
-        "collections": rows, "running": is_running(),
+        rows = s.exec(select(JobRun).order_by(JobRun.id.desc()).limit(200)).all()
+    nxt = scheduler.next_run_times()
+    return templates.TemplateResponse(request, "activity.html", {
+        "jobs": rows, "running": is_running(),
+        "next_collect": nxt.get(scheduler.JOB_ID_COLLECT),
+        "next_process": nxt.get(scheduler.JOB_ID_PROCESS),
     })
 
 

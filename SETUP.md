@@ -122,10 +122,10 @@ it survives filtering and pipeline failures. SQLite handles this comfortably at 
   (LLM one-prompt vs. embedding-based + similarity threshold).
 - **Runs** — history with status and ✉️/📨 delivery icons; *View* a past digest, **Resume** a
   failed run (re-runs the remaining stages from the saved scrape), or **Delete** a run + its data.
-- **Collections** — history of scrape cycles (schedule vs manual trigger, scraped & newly-archived
-  counts, status), including ones that found nothing new — so the collection schedule's actual
-  cadence is visible. The collect/draft intervals are anchored to local midnight (restart-safe) and
-  jittered ±20 min so the scrape times look human.
+- **Activity** — history of both background schedules — collection (scrape) and processing (draft
+  refresh) — with status, trigger (schedule vs manual), and counts, plus the **next run time** for
+  each. Includes idle cycles that found nothing new, so the real cadence is visible. The collect/draft
+  intervals are anchored to local midnight (restart-safe) and jittered ±20 min so the times look human.
 
 ## Run in a container (Podman / Docker)
 

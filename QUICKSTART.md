@@ -94,9 +94,10 @@ Open the printed HTML file in a browser to see your themed digest.
   clustering, accounts, theme titles) and a **Re-run** form: regenerate it with no re-scrape, with
   a different digest style / clustering / model / topics. Re-runs are new entries linked to the
   source; delivery stays off unless you tick "Also email / Telegram".
-- **Collections** — history of scrape cycles: status, trigger (schedule vs manual), start time,
-  and scraped / newly-archived counts. Logs every cycle, including ones that found nothing new, so
-  you can see the schedule's actual cadence.
+- **Activity** — history of both background schedules — **collection** (scrape) and **processing**
+  (draft refresh): type, status, trigger (schedule vs manual), start time, and counts. Shows the
+  **next run time** for each schedule, and logs every cycle including ones that found nothing new,
+  so you can see the actual cadence.
 
 ## Schedules + email
 The scheduler runs inside `serve` — keep that process alive. There are two ways to run it:
@@ -111,7 +112,8 @@ The scheduler runs inside `serve` — keep that process alive. There are two way
   builds up, while **Delivery** still emails/Telegrams once a day in the evening. Tweets are only
   marked "delivered" at send time, so each refresh shows the whole day so far — not slices. These
   intervals are anchored to local midnight (so app restarts don't reset the clock) and jittered
-  ±20 min so the scrape times look human; watch the actual fires on the **Collections** page.
+  ±20 min so the scrape times look human; watch the actual fires (and next run time) on the
+  **Activity** page.
 
 To receive the digest by email, fill the `SMTP_*`/`EMAIL_*` values in `.env` (e.g. Gmail + App
 Password); otherwise it's just saved to `data/digests/` and viewable under **Runs → View** (or the

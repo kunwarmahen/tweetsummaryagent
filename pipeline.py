@@ -20,8 +20,8 @@ from agents.reporter import Reporter
 from agents.summarizer import Summarizer
 from agents.threader import ThreadStitcher
 from config import settings
-from db.models import (ClusteringMethod, CollectionRun, DigestRun as DigestRunRow,
-                       DigestStyle, RawTweet, RunStatus, Tweet)
+from db.models import (ClusteringMethod, DigestRun as DigestRunRow, DigestStyle,
+                       JobRun, RawTweet, RunStatus, Tweet)
 from db.session import get_session, get_settings
 from state import DigestRun, TweetItem, load_latest_snapshot
 
@@ -92,13 +92,13 @@ def collect_guarded(trigger: str = "schedule") -> int:
         _run_lock.release()
 
 
-def refresh_draft_guarded() -> DigestRun | None:
+def refresh_draft_guarded(trigger: str = "schedule") -> DigestRun | None:
     """Refresh the live draft digest (Phase 2) unless a run is already in progress."""
     if not _run_lock.acquire(blocking=False):
         logger.info("A run is already in progress; skipping draft refresh.")
         return None
     try:
-        return refresh_draft()
+        return refresh_draft(trigger=trigger)
     except Exception:
         logger.exception("Draft refresh failed")
         return None
@@ -413,38 +413,38 @@ def collect(trigger: str = "schedule") -> int:
     ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
     state = DigestRun()
     logger.info("=== Collection started at %s ===", datetime.now(timezone.utc).isoformat())
-    crun_id = _start_collection_run(trigger)
+    job_id = _start_job_run("collect", trigger)
     try:
         Collector(ctx).run(state)
         added = _archive_raw(None, state)
         _refresh_daily_stats()
     except Exception as e:
-        _finish_collection_run(crun_id, len(state.raw_tweets), 0, "error", str(e))
+        _finish_job_run(job_id, len(state.raw_tweets), 0, "error", str(e))
         raise
     logger.info("=== Collection done: %d scraped, %d newly archived ===",
                 len(state.raw_tweets), added)
-    _finish_collection_run(crun_id, len(state.raw_tweets), added, "ok", None)
+    _finish_job_run(job_id, len(state.raw_tweets), added, "ok", None)
     return added
 
 
-def _start_collection_run(trigger: str) -> int:
+def _start_job_run(job: str, trigger: str) -> int:
     with get_session() as session:
-        row = CollectionRun(trigger=trigger)
+        row = JobRun(job=job, trigger=trigger)
         session.add(row)
         session.commit()
         session.refresh(row)
         return row.id
 
 
-def _finish_collection_run(crun_id: int, scraped: int, newly_archived: int,
-                           status: str, error: str | None) -> None:
+def _finish_job_run(job_run_id: int, primary: int, secondary: int,
+                    status: str, error: str | None) -> None:
     with get_session() as session:
-        row = session.get(CollectionRun, crun_id)
+        row = session.get(JobRun, job_run_id)
         if row is None:
             return
         row.finished_at = datetime.utcnow()
-        row.scraped = scraped
-        row.newly_archived = newly_archived
+        row.primary_count = primary
+        row.secondary_count = secondary
         row.status = status
         row.error = error
         session.add(row)
@@ -488,33 +488,41 @@ def _update_draft_row(run_id: int, state: DigestRun) -> None:
         session.commit()
 
 
-def refresh_draft() -> DigestRun | None:
+def refresh_draft(trigger: str = "schedule") -> DigestRun | None:
     """Phase 2: rebuild the live draft digest from the archive (render only, never delivers).
 
     Reuses the single open draft row (or creates one) so the portal shows one growing "Today"
     digest. Does NOT persist tweets — that happens only at delivery, so each refresh shows the
-    full set of tweets collected since the last delivery rather than disjoint slices.
+    full set of tweets collected since the last delivery rather than disjoint slices. Logs a
+    JobRun per call (incl. no-op/error) so the processing schedule's cadence is visible.
     """
+    job_id = _start_job_run("process", trigger)
     app_settings = _load_app_settings({"deliver": False})
     raw = _load_archive_window(app_settings.time_window_hours)
     if not raw:
         logger.info("Draft refresh: no tweets in the archive window yet.")
+        _finish_job_run(job_id, 0, 0, "skipped", None)
         return None
 
-    ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
-    run_id = _current_draft_id()
-    if run_id is None:
-        run_id = _create_draft_row()
-        _record_params(run_id, app_settings, source_run_id=None)
-    state = DigestRun(run_id=run_id)
-    state.raw_tweets = raw
-    logger.info("=== Draft refresh (run %s): %d archived tweets in window ===", run_id, len(raw))
+    try:
+        ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
+        run_id = _current_draft_id()
+        if run_id is None:
+            run_id = _create_draft_row()
+            _record_params(run_id, app_settings, source_run_id=None)
+        state = DigestRun(run_id=run_id)
+        state.raw_tweets = raw
+        logger.info("=== Draft refresh (run %s): %d archived tweets in window ===", run_id, len(raw))
 
-    state.snapshot(settings.data_dir, "1_collected")
-    _run_stages(ctx, state, start_after=None)   # deliver=False → renders but doesn't send
-    _update_draft_row(run_id, state)
+        state.snapshot(settings.data_dir, "1_collected")
+        _run_stages(ctx, state, start_after=None)   # deliver=False → renders but doesn't send
+        _update_draft_row(run_id, state)
+    except Exception as e:
+        _finish_job_run(job_id, len(raw), 0, "error", str(e))
+        raise
     logger.info("=== Draft refresh (run %s) done: %d tweets, %d themes -> %s ===",
                 run_id, len(state.filtered_tweets), len(state.themes), state.digest_path)
+    _finish_job_run(job_id, len(state.filtered_tweets), len(state.themes), "ok", None)
     return state
 
 

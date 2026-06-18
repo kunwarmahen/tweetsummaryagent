@@ -63,6 +63,11 @@ def _ensure_columns() -> None:
             for col, decl in cols.items():
                 if col not in existing:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        # collection_runs was superseded by the unified job_runs table; drop the (empty) legacy
+        # one if it's still hanging around. Guarded on row count so no real data is ever lost.
+        rows = conn.exec_driver_sql("PRAGMA table_info(collection_runs)").fetchall()
+        if rows and conn.exec_driver_sql("SELECT COUNT(*) FROM collection_runs").scalar() == 0:
+            conn.exec_driver_sql("DROP TABLE collection_runs")
         conn.commit()
 
 

@@ -27,7 +27,7 @@ can be replayed or debugged without re-scraping.
 - 📧 **Email + Telegram + saved HTML** delivery.
 - ⚙️ **Web config UI** (FastAPI + HTML) backed by **SQLite**.
 - ⏰ **Built-in scheduler** (APScheduler, in-process) — either one daily run, or a decoupled **collect (every few hours) → live "Today" draft → evening delivery** pipeline so the portal shows the day as it builds up while email/Telegram still goes out once a day. The daily send fires at your configured time in a **configurable timezone** (not the container's UTC clock). The collect/draft intervals are **anchored to local midnight** (so restarts don't reset the clock) and **jittered ±20 min** so the scrape cadence looks human. The collector early-stops on already-seen tweets so frequent scraping stays light. CLI: `ingest` / `process` / `deliver`.
-- 📜 **Collection history** — a **Collections** page logging every scrape cycle (schedule vs manual, scraped & newly-archived counts, status), including runs that found nothing new, so the schedule's real cadence is visible.
+- 📜 **Activity log** — an **Activity** page logging every background-schedule cycle — both **collection** (scrape) and **processing** (live-draft refresh) — with status, trigger (schedule vs manual), and counts, plus the **next run time** for each. Includes idle cycles that found nothing new, so the real cadence is visible.
 - 🔁 **Crash-resilient runs** — every stage is snapshotted, so a run that fails after scraping can be **resumed** without re-scraping.
 - 🗄️ **Raw tweet archive** — every collected tweet (pre-filter) is stored for later analysis, surviving filtering and failures.
 - 🗑️ **Run management** — delete a run and all of its data (tweets, archive rows, digest, snapshots) from the CLI or UI.

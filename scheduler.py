@@ -133,6 +133,15 @@ def reschedule() -> None:
         logger.info("Daily delivery schedule disabled")
 
 
+def next_run_times() -> dict[str, datetime | None]:
+    """Next scheduled fire (tz-aware) per job id, for display in the UI. Missing/disabled → None."""
+    out: dict[str, datetime | None] = {}
+    for jid in (JOB_ID_COLLECT, JOB_ID_PROCESS, JOB_ID):
+        job = _scheduler.get_job(jid) if _scheduler else None
+        out[jid] = job.next_run_time if job else None
+    return out
+
+
 def shutdown() -> None:
     global _scheduler
     if _scheduler is not None:

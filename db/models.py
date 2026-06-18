@@ -134,21 +134,26 @@ class DigestRun(SQLModel, table=True):
     account_count: Optional[int] = None   # distinct accounts captured
 
 
-class CollectionRun(SQLModel, table=True):
-    """One scrape cycle (Phase 1) — the collection history shown in the UI.
+class JobRun(SQLModel, table=True):
+    """One background-schedule cycle — collection (scrape) or processing (draft refresh).
 
-    Cheap and append-only: written even when nothing new is found, so the schedule's
-    actual cadence is visible (unlike raw_tweets, which only grows on new captures).
+    Cheap and append-only: logged per fire (even on no-op or error) so each schedule's actual
+    cadence is visible on the Activity page, independent of the digest_runs/draft row a process
+    cycle reuses or the raw_tweets a collect cycle appends to (both of which hide idle fires).
+    The two count columns are interpreted per job:
+      - collect:  primary = tweets scraped,        secondary = newly archived
+      - process:  primary = tweets in the window,  secondary = themes rendered
     """
-    __tablename__ = "collection_runs"
+    __tablename__ = "job_runs"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    job: str = Field(index=True)         # 'collect' | 'process'
     started_at: datetime = Field(default_factory=datetime.utcnow)
     finished_at: Optional[datetime] = None
-    scraped: int = 0              # tweets the collector saw this cycle
-    newly_archived: int = 0       # of those, how many were new to the archive
-    trigger: str = "schedule"     # 'schedule' or 'manual'
-    status: str = "running"       # 'running' -> 'ok' | 'error'
+    status: str = "running"              # 'running' -> 'ok' | 'skipped' | 'error'
+    trigger: str = "schedule"            # 'schedule' | 'manual'
+    primary_count: int = 0
+    secondary_count: int = 0
     error: Optional[str] = None
 
 

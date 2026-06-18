@@ -150,7 +150,7 @@ def cmd_process(_args: argparse.Namespace) -> int:
     import pipeline
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    state = pipeline.refresh_draft()
+    state = pipeline.refresh_draft(trigger="manual")
     if state is None:
         print("Nothing in the archive window to process yet.")
         return 1
