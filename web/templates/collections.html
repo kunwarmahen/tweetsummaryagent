@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% set active = 'collections' %}
+{% set pill = {'ok': 'success', 'error': 'failed', 'running': 'running'} %}
+{% block content %}
+<div class="flex-between">
+  <div>
+    <h2>Collections</h2>
+    <p class="sub">History of scrape cycles — every run, including ones that found nothing new.</p>
+  </div>
+  <form class="inline" method="post" action="/collect-now">
+    <button {% if running %}disabled{% endif %}>{{ 'Running…' if running else 'Collect now' }}</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if collections %}
+  <table>
+    <tr><th>#</th><th>Status</th><th>Trigger</th><th>Started</th><th>Scraped</th><th>New</th></tr>
+    {% for c in collections %}
+    <tr>
+      <td>#{{ c.id }}</td>
+      <td><span class="pill {{ pill.get(c.status, 'pending') }}">{{ c.status }}</span></td>
+      <td class="muted">{{ c.trigger }}</td>
+      <td class="muted">{{ c.started_at | localtime }}</td>
+      <td>{{ c.scraped }}</td>
+      <td>{{ c.newly_archived }}</td>
+    </tr>
+    {% if c.error %}
+    <tr><td></td><td colspan="5" class="muted" style="color:#c81e1e;">{{ c.error }}</td></tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No collections yet. Enable the collection schedule in Settings, or hit “Collect now”.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -20,8 +20,8 @@ from agents.reporter import Reporter
 from agents.summarizer import Summarizer
 from agents.threader import ThreadStitcher
 from config import settings
-from db.models import (ClusteringMethod, DigestRun as DigestRunRow, DigestStyle,
-                       RawTweet, RunStatus, Tweet)
+from db.models import (ClusteringMethod, CollectionRun, DigestRun as DigestRunRow,
+                       DigestStyle, RawTweet, RunStatus, Tweet)
 from db.session import get_session, get_settings
 from state import DigestRun, TweetItem, load_latest_snapshot
 
@@ -75,7 +75,7 @@ def replay_guarded(source_run_id: int, overrides: dict | None = None,
         _run_lock.release()
 
 
-def collect_guarded() -> int:
+def collect_guarded(trigger: str = "schedule") -> int:
     """Scrape new tweets into the archive (Phase 1) unless a run is already in progress.
 
     Returns the number of newly-archived tweets (0 if skipped or nothing new).
@@ -84,7 +84,7 @@ def collect_guarded() -> int:
         logger.info("A run is already in progress; skipping collection.")
         return 0
     try:
-        return collect()
+        return collect(trigger=trigger)
     except Exception:
         logger.exception("Collection failed")
         return 0
@@ -402,22 +402,53 @@ def _load_archive_window(hours: int) -> list[TweetItem]:
     return items
 
 
-def collect() -> int:
+def collect(trigger: str = "schedule") -> int:
     """Phase 1: scrape new tweets into the raw archive. No filter/summary/digest/delivery.
 
     The Collector skips tweets already archived (early-stop), so frequent collection stays cheap
-    and avoids re-hammering X. Returns the number of newly-archived tweets.
+    and avoids re-hammering X. Returns the number of newly-archived tweets. Records a
+    CollectionRun row (even on error or zero-new) so the schedule's cadence is auditable.
     """
     app_settings = _load_app_settings()
     ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
     state = DigestRun()
     logger.info("=== Collection started at %s ===", datetime.now(timezone.utc).isoformat())
-    Collector(ctx).run(state)
-    added = _archive_raw(None, state)
-    _refresh_daily_stats()
+    crun_id = _start_collection_run(trigger)
+    try:
+        Collector(ctx).run(state)
+        added = _archive_raw(None, state)
+        _refresh_daily_stats()
+    except Exception as e:
+        _finish_collection_run(crun_id, len(state.raw_tweets), 0, "error", str(e))
+        raise
     logger.info("=== Collection done: %d scraped, %d newly archived ===",
                 len(state.raw_tweets), added)
+    _finish_collection_run(crun_id, len(state.raw_tweets), added, "ok", None)
     return added
+
+
+def _start_collection_run(trigger: str) -> int:
+    with get_session() as session:
+        row = CollectionRun(trigger=trigger)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row.id
+
+
+def _finish_collection_run(crun_id: int, scraped: int, newly_archived: int,
+                           status: str, error: str | None) -> None:
+    with get_session() as session:
+        row = session.get(CollectionRun, crun_id)
+        if row is None:
+            return
+        row.finished_at = datetime.utcnow()
+        row.scraped = scraped
+        row.newly_archived = newly_archived
+        row.status = status
+        row.error = error
+        session.add(row)
+        session.commit()
 
 
 def _create_draft_row() -> int:

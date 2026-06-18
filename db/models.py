@@ -134,6 +134,24 @@ class DigestRun(SQLModel, table=True):
     account_count: Optional[int] = None   # distinct accounts captured
 
 
+class CollectionRun(SQLModel, table=True):
+    """One scrape cycle (Phase 1) — the collection history shown in the UI.
+
+    Cheap and append-only: written even when nothing new is found, so the schedule's
+    actual cadence is visible (unlike raw_tweets, which only grows on new captures).
+    """
+    __tablename__ = "collection_runs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    finished_at: Optional[datetime] = None
+    scraped: int = 0              # tweets the collector saw this cycle
+    newly_archived: int = 0       # of those, how many were new to the archive
+    trigger: str = "schedule"     # 'schedule' or 'manual'
+    status: str = "running"       # 'running' -> 'ok' | 'error'
+    error: Optional[str] = None
+
+
 class RawTweet(SQLModel, table=True):
     """Append-only archive of EVERY tweet the collector captured (pre-filter), for analysis.
 

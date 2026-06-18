@@ -138,7 +138,7 @@ def cmd_ingest(_args: argparse.Namespace) -> int:
     import pipeline
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    added = pipeline.collect()
+    added = pipeline.collect(trigger="manual")
     print(f"Done. {added} newly-archived tweets.")
     return 0
 

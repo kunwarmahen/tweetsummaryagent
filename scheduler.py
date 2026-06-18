@@ -7,6 +7,7 @@ The schedule is read from the DB and can be changed live from the UI via resched
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -22,7 +23,23 @@ JOB_ID_META = "weekly_meta_digest"
 JOB_ID_COLLECT = "collection"
 JOB_ID_PROCESS = "process_draft"
 
+# Random ±wobble (seconds) added to each interval fire so the scrape cadence looks
+# human rather than a robotic on-the-hour beacon (e.g. 08:14, 10:21 instead of 08:00).
+_JITTER_SECONDS = 20 * 60
+
 _scheduler: BackgroundScheduler | None = None
+
+
+def _interval_trigger(hours: int, tz: ZoneInfo) -> IntervalTrigger:
+    """Interval anchored to local midnight, with jitter.
+
+    A bare IntervalTrigger fires at now+interval and resets that clock on every restart,
+    so frequent restarts (or a sleeping host) can starve the job. Anchoring start_date to
+    midnight pins the fire grid (e.g. every 2 h => 00:00, 02:00, …) so restarts only skip
+    to the next slot instead of pushing a full interval out. Jitter then wobbles each fire.
+    """
+    anchor = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    return IntervalTrigger(hours=hours, start_date=anchor, jitter=_JITTER_SECONDS, timezone=tz)
 
 
 def _resolve_tz(name: str) -> ZoneInfo:
@@ -93,13 +110,13 @@ def reschedule() -> None:
             _scheduler.remove_job(job_id)
 
     if collect_on:
-        _scheduler.add_job(_collect_job, IntervalTrigger(hours=collect_hrs),
+        _scheduler.add_job(_collect_job, _interval_trigger(collect_hrs, tz),
                            id=JOB_ID_COLLECT, replace_existing=True, misfire_grace_time=3600)
-        logger.info("Collection scheduled every %d h", collect_hrs)
+        logger.info("Collection scheduled every %d h (anchored, jittered)", collect_hrs)
     if process_on:
-        _scheduler.add_job(_process_job, IntervalTrigger(hours=process_hrs),
+        _scheduler.add_job(_process_job, _interval_trigger(process_hrs, tz),
                            id=JOB_ID_PROCESS, replace_existing=True, misfire_grace_time=3600)
-        logger.info("Draft refresh scheduled every %d h", process_hrs)
+        logger.info("Draft refresh scheduled every %d h (anchored, jittered)", process_hrs)
 
     if enabled:
         # When collection runs on its own schedule, the evening job just delivers the archive;

@@ -12,8 +12,9 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import func, select
 
 import pipeline
-from db.models import (AccountSetting, AppSettings, ClusteringMethod, DigestRun,
-                       DigestStyle, ExcludedAccount, RawTweet, ThreadMode, Topic, Tweet)
+from db.models import (AccountSetting, AppSettings, ClusteringMethod, CollectionRun,
+                       DigestRun, DigestStyle, ExcludedAccount, RawTweet, ThreadMode,
+                       Topic, Tweet)
 from db.session import get_session, get_settings
 
 _TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -103,7 +104,7 @@ def run_now(background_tasks: BackgroundTasks):
 def collect_now(background_tasks: BackgroundTasks):
     """Phase 1: scrape new tweets into the archive."""
     if not is_running():
-        background_tasks.add_task(pipeline.collect_guarded)
+        background_tasks.add_task(pipeline.collect_guarded, trigger="manual")
     return RedirectResponse("/", status_code=303)
 
 
@@ -544,6 +545,18 @@ def runs(request: Request):
         rows = s.exec(select(DigestRun).order_by(DigestRun.id.desc())).all()
     return templates.TemplateResponse(request, "runs.html", {
         "runs": rows, "running": is_running(),
+    })
+
+
+@router.get("/collections", response_class=HTMLResponse)
+def collections(request: Request):
+    """History of scrape (collection) cycles — the schedule's actual cadence."""
+    with get_session() as s:
+        rows = s.exec(
+            select(CollectionRun).order_by(CollectionRun.id.desc()).limit(200)
+        ).all()
+    return templates.TemplateResponse(request, "collections.html", {
+        "collections": rows, "running": is_running(),
     })
 
 
