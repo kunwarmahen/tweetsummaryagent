@@ -63,7 +63,11 @@
   </div>
 
   <div class="card">
-    <strong>Collection</strong>
+    <strong>Collection settings (what to scrape)</strong>
+    <p class="muted" style="margin-top:4px;font-size:13px;">
+      Filters applied every time collection runs. Only tweets you haven't seen before are pulled in —
+      anything already in the archive is skipped — so these rules shape which <em>new</em> tweets count.
+    </p>
     <div class="row">
       <div><label>Time window (hours)</label><input type="number" name="time_window_hours" min="1" value="{{ cfg.time_window_hours }}"></div>
       <div><label>Max tweets / account</label><input type="number" name="max_tweets_per_account" min="1" value="{{ cfg.max_tweets_per_account }}"></div>
