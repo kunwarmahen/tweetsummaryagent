@@ -108,7 +108,13 @@ Playwright login or a copied profile can't reproduce that key and gets flagged b
 - **Session import** (`main.py import-profile`): decrypts your X/Twitter cookies straight from
   Chrome's cookie DB using `browser_cookie3`, and writes a Playwright `storage_state`
   (`auth/storage_state.json`). No scripted login, nothing for X to flag. Your handle is saved
-  to `auth/session_meta.json`.
+  to `auth/session_meta.json`. **Host-only** — needs the desktop keyring.
+- **Cookie import** (`main.py import-cookies <file>`, or the UI **Session** page): the
+  keyring-free / container-friendly path. The user exports their `x.com` cookies with a browser
+  extension (Netscape `cookies.txt` or JSON); `agents/cookies.py` parses it, keeps the x.com /
+  twitter.com cookies (requiring `auth_token`), and writes the same `storage_state.json`. Because
+  the export is already plaintext, no keyring is involved — so it runs **inside the container**.
+  `agents/session.py` exposes a status summary and a live login **Test session** check.
 - **Runs**: launch a hardened browser (real Google Chrome via `channel="chrome"` when present,
   automation flags dropped, JS fingerprint patched), load the `storage_state`, visit
   `x.com/{handle}`, scroll, and extract `article[data-testid="tweet"]` nodes via in-page JS.
@@ -224,10 +230,11 @@ twitter_summary_agent/
 the collector's launcher prefers `channel="chrome"` (the same hardened path as the host). The
 container intentionally has **no host keyring access**, so it never imports cookies itself:
 
-- `import-profile` is run on the **host** (decrypts cookies → `auth/storage_state.json`).
-- `auth/` is mounted **read-only** into the container; the collector reuses that session. When
-  running as root the launcher adds `--no-sandbox`/`--disable-dev-shm-usage` (Chrome refuses to
-  run as root otherwise).
+- The session is provided either by `import-profile` on the **host** (keyring), or by uploading a
+  cookie export on the **Session** page / `import-cookies` (no keyring — works in-container).
+- `auth/` is mounted **read-write** (`TSA_AUTH_DIR`, default the project's `./auth`) so the UI can
+  write the session; the collector reuses it. When running as root the launcher adds
+  `--no-sandbox`/`--disable-dev-shm-usage` (Chrome refuses to run as root otherwise).
 - The container keeps its **own** data store (DB, snapshots, digests) mounted read-write — by
   default `~/.local/share/twitter-summary-agent` (override `TSA_DATA_DIR`; same default for
   `run-podman.sh` and compose), deliberately **separate from the project's `./data`** so a host
