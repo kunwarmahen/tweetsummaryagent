@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% set active = 'trends' %}
 {% block content %}
-<h2>Trends</h2>
-<p class="sub">What your feed has looked like over time — built from the tweet archive.</p>
+<div class="flex-between">
+  <h2>Trends</h2>
+  <form class="inline" method="post" action="/trends/rebuild">
+    <input type="hidden" name="themes" value="1">
+    <button class="btn-ghost btn-sm" {% if running %}disabled{% endif %} type="submit">Rebuild trends</button>
+  </form>
+</div>
+<p class="sub">What your feed has looked like over time — built from the tweet archive.
+  “Rebuild trends” recomputes the daily series and recurring themes (needs Ollama for theme embeddings).</p>
 
 <div class="card">
   <div class="flex-between" style="margin-bottom:6px;">

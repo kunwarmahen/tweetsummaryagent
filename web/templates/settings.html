@@ -147,4 +147,46 @@
   <p class="muted" style="margin-top:10px;">No topics set.</p>
   {% endif %}
 </div>
+
+<div class="card" style="margin-top:24px;">
+  <strong>Telegram</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;">
+    Bot token / chat id are set in <code>.env</code>. Token {{ '✓ set' if tg_token_set else '— not set' }},
+    chat id {{ '✓ set' if tg_chat_set else '— not set' }}.
+  </p>
+  {% if tg_msg %}<div class="card" style="margin-top:10px;background:var(--bg);">{{ tg_msg }}</div>{% endif %}
+  <div style="display:flex;gap:8px;margin-top:12px;">
+    <form class="inline" method="post" action="/maintenance/telegram/chatid">
+      <button class="btn-ghost btn-sm" type="submit">Discover chat id</button>
+    </form>
+    <form class="inline" method="post" action="/maintenance/telegram/test">
+      <button class="btn-sm" type="submit">Send test message</button>
+    </form>
+  </div>
+  <p class="muted" style="margin-top:10px;font-size:12px;">
+    To discover your chat id: message your bot in Telegram, then click “Discover chat id”.
+  </p>
+</div>
+
+<div class="card">
+  <strong>Maintenance</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;">
+    Rebuild the raw archive from saved snapshots (one-time, for older databases).
+  </p>
+  <form method="post" action="/maintenance/archive-backfill" style="margin-top:10px;">
+    <button class="btn-ghost btn-sm" type="submit">Backfill raw archive</button>
+  </form>
+</div>
+
+<div class="card" style="border-color:#f4212e;">
+  <strong style="color:#c81e1e;">Danger zone</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;">
+    Delete <strong>all run data</strong> (runs, tweets, raw archive, trends) and start fresh. Keeps
+    your settings, accounts, limits/VIPs, and topics. The database is backed up first.
+  </p>
+  <form method="post" action="/maintenance/reset-runs" style="margin-top:10px;"
+        onsubmit="return confirm('Delete ALL run data? Settings and accounts are kept. The DB is backed up first.');">
+    <button class="btn-danger btn-sm" {% if running %}disabled{% endif %} type="submit">Reset all run data</button>
+  </form>
+</div>
 {% endblock %}

@@ -54,7 +54,8 @@ Open the printed HTML file in a browser to see your themed digest.
 | Command | What it does |
 |---------|--------------|
 | `init-db` | Create the SQLite database. |
-| `import-profile` | Reuse your logged-in Chrome X session (decrypts cookies). |
+| `import-profile` | Reuse your logged-in Chrome X session (decrypts cookies via the host keyring). |
+| `import-cookies <file>` | Import an X session from a browser cookie export (Netscape `cookies.txt` or JSON) — no keyring, works in a container. Also available in the UI **Session** page. |
 | `collect [--max-accounts N] [--out FILE]` | Scrape + dump tweets only (debug). |
 | `run [--max-accounts N]` | Full pipeline in one go: scrape → filter → summarize → render → deliver. |
 | `ingest` | Phase 1: scrape new tweets into the archive (no digest). |
@@ -83,7 +84,10 @@ Open the printed HTML file in a browser to see your themed digest.
 - **Settings** — the three **schedules** (Delivery / Collection / Processing — see below), time
   window, retweets, **thread stitching**, exclude-keywords, model, max themes, topics,
   **digest style** (themed / per-account / highlights), and **clustering** (LLM one-prompt vs.
-  embedding-based with `nomic-embed-text` + similarity threshold).
+  embedding-based with `nomic-embed-text` + similarity threshold). Plus **Telegram** test/chat-id
+  helpers, **archive backfill**, and a **Danger zone** to reset all run data.
+- **Session** — import your X session by uploading a browser cookie export (no host/keyring),
+  see its status, and **Test session** to confirm you're logged in.
 - **Runs** — history with status; *View* a past digest, **Resume** a failed run, or **Delete** a
   run and all its data. Click a run's **#id** for its detail page (what it did — style, model,
   clustering, accounts, theme titles) and a **Re-run** form: regenerate it with no re-scrape, with

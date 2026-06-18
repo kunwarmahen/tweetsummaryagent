@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request
+from fastapi import APIRouter, BackgroundTasks, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import func, select
@@ -81,6 +82,41 @@ def deliver_now(background_tasks: BackgroundTasks):
     if not is_running():
         background_tasks.add_task(pipeline.deliver_guarded)
     return RedirectResponse("/runs", status_code=303)
+
+
+# ---------------------------------------------------------------- Session / auth
+@router.get("/session", response_class=HTMLResponse)
+def session_page(request: Request, imported: int | None = None, error: str | None = None):
+    from agents import session as sess
+
+    return templates.TemplateResponse(request, "session.html", {
+        "summary": sess.summary(), "status": sess.last_status(),
+        "checking": sess.is_checking(), "running": is_running(),
+        "imported": imported, "error": error,
+    })
+
+
+@router.post("/session/import-cookies")
+async def import_cookies(file: UploadFile = File(...), fmt: str = Form("auto")):
+    """Import an X session from an uploaded browser-cookie export (no keyring needed)."""
+    from agents import cookies
+
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8", "replace")
+        n = cookies.import_cookies_text(text, fmt=fmt)
+    except (ValueError, OSError) as e:
+        return RedirectResponse(f"/session?error={quote(str(e))}", status_code=303)
+    return RedirectResponse(f"/session?imported={n}", status_code=303)
+
+
+@router.post("/session/test")
+def session_test(background_tasks: BackgroundTasks):
+    from agents import session as sess
+
+    if not sess.is_checking() and not is_running():
+        background_tasks.add_task(sess.check_guarded)
+    return RedirectResponse("/session", status_code=303)
 
 
 @router.post("/runs/{run_id}/resume")
@@ -174,6 +210,78 @@ def regenerate_meta_digest(background_tasks: BackgroundTasks):
     if not analytics.is_meta_running():
         background_tasks.add_task(analytics.generate_meta_digest_guarded, 7)
     return RedirectResponse("/trends", status_code=303)
+
+
+@router.post("/trends/rebuild")
+def rebuild_trends(background_tasks: BackgroundTasks, themes: str = Form(None)):
+    """Rebuild materialized trend tables from the archive (daily_stats, and themes unless skipped)."""
+    from agents import analytics
+
+    def _rebuild(with_themes: bool):
+        try:
+            analytics.recompute_daily_stats()
+            if with_themes:
+                analytics.rebuild_theme_history()
+        except Exception:
+            pass  # best-effort; needs Ollama for theme embeddings
+
+    if not is_running():
+        background_tasks.add_task(_rebuild, themes is not None)
+    return RedirectResponse("/trends", status_code=303)
+
+
+# ---------------------------------------------------------------- Maintenance
+@router.post("/maintenance/archive-backfill")
+def archive_backfill(background_tasks: BackgroundTasks):
+    background_tasks.add_task(pipeline.backfill_raw_archive)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/maintenance/reset-runs")
+def reset_runs_route():
+    """Wipe ALL run data (keeps settings/accounts/topics). Backs up the DB first."""
+    try:
+        pipeline.reset_runs(backup=True)
+    except RuntimeError:
+        pass  # a run is in progress — ignore and refresh
+    return RedirectResponse("/runs", status_code=303)
+
+
+@router.post("/maintenance/telegram/chatid")
+def telegram_chatid():
+    from agents import telegram
+    from config import settings as cfg
+
+    if not cfg.telegram_bot_token:
+        return RedirectResponse(f"/settings?tg={quote('Set TELEGRAM_BOT_TOKEN in .env first.')}",
+                                status_code=303)
+    seen = {}
+    try:
+        for u in telegram.get_updates(cfg.telegram_bot_token):
+            chat = (u.get("message") or u.get("channel_post") or {}).get("chat", {})
+            if chat.get("id") is not None:
+                seen[chat["id"]] = chat.get("title") or chat.get("username") or chat.get("first_name", "")
+    except Exception as e:
+        return RedirectResponse(f"/settings?tg={quote(f'Lookup failed: {e}')}", status_code=303)
+    if not seen:
+        msg = "No chats found — message your bot in Telegram, then retry."
+    else:
+        msg = "Chat id(s): " + "; ".join(f"{cid} ({name})" for cid, name in seen.items())
+    return RedirectResponse(f"/settings?tg={quote(msg)}", status_code=303)
+
+
+@router.post("/maintenance/telegram/test")
+def telegram_test():
+    from agents import telegram
+    from config import settings as cfg
+
+    if not (cfg.telegram_bot_token and cfg.telegram_chat_id):
+        msg = "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first."
+    else:
+        ok = telegram.send_message(cfg.telegram_bot_token, cfg.telegram_chat_id,
+                                   "✅ <b>Twitter Summary Agent</b> Telegram test message.")
+        msg = "Test message sent ✓" if ok else "Send failed — check token/chat id (see logs)."
+    return RedirectResponse(f"/settings?tg={quote(msg)}", status_code=303)
 
 
 # ---------------------------------------------------------------- Accounts
@@ -314,7 +422,9 @@ def remove_topic(topic_id: int):
 
 # ---------------------------------------------------------------- Settings
 @router.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request):
+def settings_page(request: Request, tg: str | None = None):
+    from config import settings as boot
+
     with get_session() as s:
         cfg = get_settings(s)
         topics = s.exec(select(Topic).order_by(Topic.name)).all()
@@ -323,6 +433,10 @@ def settings_page(request: Request):
         "styles": [st.value for st in DigestStyle],
         "methods": [m.value for m in ClusteringMethod],
         "thread_modes": [m.value for m in ThreadMode],
+        "tg_msg": tg,
+        "tg_token_set": bool(boot.telegram_bot_token),
+        "tg_chat_set": bool(boot.telegram_chat_id),
+        "running": is_running(),
     })
 
 

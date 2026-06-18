@@ -148,9 +148,11 @@ schema is created on boot. Confirm the session works inside the container with:
 podman exec twitter-summary-agent python main.py collect --max-accounts 2   # logged-in? scrapes 2
 ```
 
-Note: `import-profile` is **host-only** (it needs the desktop keyring); the container only ever
-*reads* the resulting `storage_state.json`, launching real Chrome headless to scrape. To seed the
-container's store from your own data later, stop it and copy your `./data` in:
+**Providing the X session:** `import-profile` is **host-only** (it needs the desktop keyring). For a
+pure-container setup, open the **Session** page in the UI and upload a browser cookie export
+(`import-cookies`) — no keyring, and the `auth/` mount is read-write so it persists. Either way the
+container launches real Chrome headless to scrape. To seed the container's data store from your own
+`./data` later, stop it and copy in:
 
 ```bash
 podman stop twitter-summary-agent

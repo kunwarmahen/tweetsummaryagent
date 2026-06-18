@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% set active = 'session' %}
+{% block content %}
+<h2>Session</h2>
+<p class="sub">The logged-in X session the scraper uses. Import it here — no shell or host keyring needed.</p>
+
+{% if imported is not none %}
+<div class="card" style="border-color:#127c34;background:#e1f7e7;">
+  ✅ Imported {{ imported }} cookies. Click <strong>Test session</strong> below to confirm it works.
+</div>
+{% endif %}
+{% if error %}
+<div class="card" style="border-color:#c81e1e;background:#fde8e8;">⚠️ {{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <div class="flex-between">
+    <div>
+      <strong>Status</strong>
+      {% if summary.present %}
+        <div class="muted" style="margin-top:6px;">
+          <span class="pill {{ 'success' if summary.has_auth_token else 'failed' }}">
+            {{ 'session present' if summary.has_auth_token else 'incomplete' }}</span>
+          · {{ summary.cookie_count }} cookies
+          {% if not summary.has_auth_token %}· <strong>missing auth_token</strong>{% endif %}
+          {% if summary.expires_at %}· earliest cookie expiry {{ summary.expires_at }}{% endif %}
+        </div>
+      {% else %}
+        <div class="muted" style="margin-top:6px;">No session imported yet.</div>
+      {% endif %}
+      {% if status.checked_at %}
+        <div class="muted" style="margin-top:8px;">
+          Last test:
+          <span class="pill {{ 'success' if status.ok else 'failed' }}">{{ 'ok' if status.ok else 'failed' }}</span>
+          {{ status.message }}
+        </div>
+      {% endif %}
+    </div>
+    <form class="inline" method="post" action="/session/test">
+      <button class="btn-ghost" {% if checking or running %}disabled{% endif %}>
+        {{ 'Testing…' if checking else 'Test session' }}</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <strong>Import cookies</strong>
+  <p class="muted" style="margin-top:4px;font-size:13px;line-height:1.6;">
+    Export your <code>x.com</code> cookies with a browser extension while logged in, then upload the
+    file. Works with <strong>Netscape <code>cookies.txt</code></strong> ("Get cookies.txt LOCALLY")
+    or <strong>JSON</strong> ("Cookie-Editor"). The export is plaintext, so no keyring is involved —
+    this is the container-friendly alternative to <code>import-profile</code>.
+  </p>
+  <form method="post" action="/session/import-cookies" enctype="multipart/form-data">
+    <label>Cookie file</label>
+    <input type="file" name="file" accept=".txt,.json,text/plain,application/json" required
+           style="width:100%;padding:9px 11px;border:1px solid #cfd9de;border-radius:8px;">
+    <label>Format</label>
+    <select name="fmt">
+      <option value="auto">Auto-detect</option>
+      <option value="netscape">Netscape (cookies.txt)</option>
+      <option value="json">JSON</option>
+    </select>
+    <div style="margin-top:16px;"><button type="submit">Import session</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <p class="muted" style="margin:0;font-size:13px;">
+    On a host with Chrome, you can instead run <code>python main.py import-profile</code> (decrypts
+    your Chrome session via the keyring). That path can't run inside a container — use the upload above.
+  </p>
+</div>
+{% endblock %}

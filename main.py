@@ -69,6 +69,21 @@ def cmd_collect(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_cookies(args: argparse.Namespace) -> int:
+    """Import an X session from a browser-exported cookie file (no keyring — works in a container)."""
+    from agents import cookies
+    from config import settings
+
+    try:
+        n = cookies.import_cookies_file(args.file, fmt=args.format)
+    except (ValueError, OSError) as e:
+        print(f"Error: {e}")
+        return 1
+    print(f"Imported {n} X cookies -> {settings.storage_state_path}")
+    print("Tip: verify with `python main.py collect --max-accounts 2`.")
+    return 0
+
+
 def cmd_telegram_chatid(_args: argparse.Namespace) -> int:
     from agents import telegram
     from config import settings
@@ -278,6 +293,13 @@ def build_parser() -> argparse.ArgumentParser:
     imp.add_argument("--cookie-file", default=None,
                      help="Path to Chrome Cookies DB (default: ~/.config/google-chrome/Default/Cookies)")
     imp.set_defaults(func=cmd_import_profile)
+
+    ic = sub.add_parser("import-cookies",
+                        help="Import an X session from a browser-exported cookie file (no keyring; works in a container)")
+    ic.add_argument("file", help="Path to the exported cookies file (Netscape cookies.txt or JSON)")
+    ic.add_argument("--format", choices=["auto", "netscape", "json"], default="auto",
+                    help="Export format (default: auto-detect)")
+    ic.set_defaults(func=cmd_import_cookies)
 
     collect = sub.add_parser("collect", help="Scrape and dump tweets (debug, no summary)")
     collect.add_argument("--out", default=None, help="Output JSON path")

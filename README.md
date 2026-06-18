@@ -15,6 +15,7 @@ can be replayed or debugged without re-scraping.
 ## Features
 
 - 🌐 **Browser-based collection** — no API key; reuses your Chrome X session (cookies decrypted locally).
+- 🔑 **Two ways to provide the X session** — `import-profile` (decrypts Chrome cookies via the host keyring) or, for containers/no-keyring, upload a browser cookie export on the **Session** page (`import-cookies`). Built-in **session status + test**.
 - 📋 **Following-list scraping** with a per-account **exclude list** (blocklist).
 - 🧠 **Local LLM summarization** via Ollama (`gemma4:e4b`) — private, free.
 - 📰 **Three digest styles** — themed newsletter, per-account summaries, or ranked highlights.
@@ -63,8 +64,10 @@ and stored in SQLite.
 
 ## Run in a container (Podman / Docker)
 
-The container runs the web UI + scheduler. It does **not** log into X — you import your
-session on the host first (which decrypts your Chrome cookies), then mount `auth/` in.
+The container runs the web UI + scheduler. For a **pure-Podman** setup (no host Chrome/keyring),
+start it, open the **Session** page, and upload a browser cookie export — `import-cookies` writes
+the session into the writable `auth/` mount. Or, on a host with Chrome, run `import-profile` first
+and the container reuses it. The `auth/` mount is read-write so the UI can write the session.
 
 ```bash
 # On the host, once:

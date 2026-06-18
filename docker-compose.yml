@@ -15,5 +15,6 @@ services:
       # ./data. Defaults to ~/.local/share/twitter-summary-agent (matching run-podman.sh);
       # override by exporting TSA_DATA_DIR.
       - ${TSA_DATA_DIR:-${HOME}/.local/share/twitter-summary-agent}:/app/data:Z
-      - ./auth:/app/auth:ro,Z       # session imported on the host (read-only)
+      # Auth (X session) read-write so the Session page / import-cookies can write it in-container.
+      - ${TSA_AUTH_DIR:-./auth}:/app/auth:Z
     restart: unless-stopped

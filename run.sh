@@ -56,6 +56,7 @@ Twitter Summary Agent — what would you like to do?
     1) init-db            Create the SQLite database and tables
     2) import-profile     Reuse your logged-in Chrome X session (decrypts cookies)
     3) login              One-time browser login (fallback)
+    i) import-cookies     Import an X session from a browser cookie export (no keyring)
 
   Daily use
     4) serve              Start the web UI + scheduler (http://127.0.0.1:8000)
@@ -100,6 +101,7 @@ case "$choice" in
   1)  run init-db ;;
   2)  run import-profile ;;
   3)  run login ;;
+  i|I) read -rp "Path to cookie export file: " cf; run import-cookies "$cf" ;;
   4)  run serve ;;
   5)  run run ;;
   6)  read -rp "Max accounts: " n; run run --max-accounts "$n" ;;
