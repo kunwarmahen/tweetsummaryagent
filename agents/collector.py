@@ -20,7 +20,7 @@ from agents.base import Agent
 from agents.browser import launch_context, session_exists
 from auth.login import load_handle
 from db.models import AccountSetting, ExcludedAccount, RawTweet, ThreadMode
-from db.session import get_session
+from db.session import get_session, get_settings
 from state import DigestRun, TweetItem
 
 _STATUS_RE = re.compile(r"/status/(\d+)")
@@ -78,6 +78,13 @@ def _parse_count(label: str | None) -> int:
 class Collector(Agent):
     name = "collector"
 
+    # Consecutive empty timelines that look like rate-limiting before we react.
+    _EMPTY_STREAK_LIMIT = 8
+    # How many times we'll cool down and resume before giving up on the run.
+    _MAX_COOLDOWNS = 2
+    # Base cooldown (scaled by attempt number) when throttling is suspected.
+    _COOLDOWN_MS = 60_000
+
     def __init__(self, ctx, max_accounts: int | None = None, skip_known: bool = True):
         super().__init__(ctx)
         self.max_accounts = max_accounts
@@ -103,6 +110,15 @@ class Collector(Agent):
 
     def _max_for(self, handle: str) -> int:
         return self._limits.get(handle.lower(), self.ctx.app_settings.max_tweets_per_account)
+
+    def _advance_cursor(self, value: int) -> None:
+        """Persist the round-robin scrape offset for the next collection run."""
+        with get_session() as session:
+            row = get_settings(session)
+            row.collect_cursor = value
+            session.add(row)
+            session.commit()
+        self.log.info("Collection cursor -> %d", value)
 
     def _scroll(self, page, rounds: int, pause_ms: int = 1200) -> None:
         for _ in range(rounds):
@@ -242,14 +258,28 @@ class Collector(Agent):
             self.log.info("Found %d followed accounts", len(following))
             targets = [h for h in following if h.lower() not in excluded]
             self.log.info("Scraping %d after excluding %d blocked", len(targets), len(following) - len(targets))
-            if self.max_accounts:
+
+            total = len(targets)                 # filtered list length, in natural follow-order
+            start = 0
+            test_mode = bool(self.max_accounts)
+            if test_mode:
                 targets = targets[:self.max_accounts]
                 self.log.info("Limiting to first %d accounts (test mode)", len(targets))
+            elif total:
+                # Round-robin: begin where the previous run stopped so the tail of the following
+                # list isn't perpetually starved when runs end early. Cursor is advanced below.
+                start = self.ctx.app_settings.collect_cursor % total
+                if start:
+                    targets = targets[start:] + targets[:start]
+                    self.log.info("Rotating scrape order by %d (round-robin cursor)", start)
 
             if with_replies:
                 self.log.info("Reply-mode thread detection: scraping 'with replies' timelines")
             empty_streak = 0
+            cooldowns = 0
+            processed = 0
             for i, handle in enumerate(targets):
+                processed = i + 1            # 1-based count of accounts reached (incl. failures)
                 try:
                     tweets = self._scrape_account(page, handle, cutoff, with_replies=with_replies)
                 except Exception as e:  # one bad account shouldn't kill the run
@@ -260,12 +290,28 @@ class Collector(Agent):
                 self.log.info("@%s -> %d tweets in window", handle, len(tweets))
                 state.raw_tweets.extend(tweets)
 
-                # Detect likely rate-limiting: many consecutive empty timelines.
+                # Many consecutive empty timelines usually mean X is throttling. Rather than
+                # abandoning the run (which always starved the same tail accounts), cool down and
+                # keep going; only give up if it persists across several cooldowns. The cursor
+                # advanced below means the next run resumes wherever we stop — nothing is starved.
                 empty_streak = empty_streak + 1 if not tweets else 0
-                if empty_streak >= 8:
+                if empty_streak >= self._EMPTY_STREAK_LIMIT:
+                    if cooldowns < self._MAX_COOLDOWNS:
+                        cooldowns += 1
+                        cooldown_ms = self._COOLDOWN_MS * cooldowns
+                        self.log.warning(
+                            "%d consecutive empty accounts — likely throttled; cooling down %.0fs "
+                            "then continuing (cooldown %d/%d)",
+                            empty_streak, cooldown_ms / 1000, cooldowns, self._MAX_COOLDOWNS,
+                        )
+                        page.wait_for_timeout(cooldown_ms)
+                        empty_streak = 0
+                        continue
+                    next_cursor = (start + processed) % total if total else 0
                     self.log.warning(
-                        "8 consecutive accounts returned no tweets — X is likely rate-limiting. "
-                        "Stopping early; try again later (X throttles rapid scraping)."
+                        "Still no tweets after %d cooldowns — stopping early; next run resumes "
+                        "from cursor %d (X throttles rapid scraping).",
+                        self._MAX_COOLDOWNS, next_cursor,
                     )
                     break
 
@@ -276,6 +322,11 @@ class Collector(Agent):
 
             context.close()
             browser.close()
+
+        # Advance the round-robin cursor past the accounts we reached, so the next run picks up
+        # the tail. Skip in test mode (a capped run shouldn't move the production cursor).
+        if not test_mode and total:
+            self._advance_cursor((start + processed) % total)
 
         self.log.info("Collected %d raw tweets total", len(state.raw_tweets))
         return state

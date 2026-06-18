@@ -1,4 +1,10 @@
+import pytest
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, SQLModel, create_engine
+
+import agents.collector as collector_mod
 from agents.collector import Collector
+from db.models import AppSettings
 
 
 def _raw(**over):
@@ -47,3 +53,24 @@ def test_max_for_uses_override_then_default(make_ctx):
     assert c._max_for("alice") == 10     # per-account override
     assert c._max_for("Alice") == 10     # case-insensitive
     assert c._max_for("bob") == 50       # falls back to global default
+
+
+@pytest.fixture
+def mem_db(monkeypatch):
+    """Isolated in-memory DB with a seeded settings row for cursor tests."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        s.add(AppSettings(id=1))
+        s.commit()
+    monkeypatch.setattr(collector_mod, "get_session", lambda: Session(engine))
+    monkeypatch.setattr(collector_mod, "get_settings", lambda s: s.get(AppSettings, 1))
+    return engine
+
+
+def test_advance_cursor_persists_round_robin_offset(make_ctx, mem_db):
+    c = Collector(make_ctx())
+    c._advance_cursor(7)               # next run should resume from offset 7
+    with Session(mem_db) as s:
+        assert s.get(AppSettings, 1).collect_cursor == 7

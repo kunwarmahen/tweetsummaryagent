@@ -58,6 +58,10 @@ class AppSettings(SQLModel, table=True):
     time_window_hours: int = 24
     max_tweets_per_account: int = 50
     include_retweets: bool = False
+    # Round-robin scrape offset into the following list (internal — not shown in the UI).
+    # The collector starts each run here and advances it past the accounts it reached, so a run
+    # that ends early (rate-limit cooldown) resumes the tail next time instead of starving it.
+    collect_cursor: int = 0
     exclude_keywords: str = ""   # comma-separated; tweets containing any are dropped
     stitch_threads: bool = True       # merge an author's self-replies into one item
     thread_mode: ThreadMode = ThreadMode.reply   # reply-metadata chaining vs time-gap
