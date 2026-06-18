@@ -24,7 +24,7 @@
   <div id="metaNarrative" data-md="{{ meta.narrative }}" class="meta-narrative"></div>
   <div class="muted" style="font-size:12px;margin-top:10px;">
     {{ meta.period_start }} → {{ meta.period_end }} ·
-    {{ meta.generated_at.strftime('%Y-%m-%d %H:%M') }} UTC{% if meta.model %} · {{ meta.model }}{% endif %}
+    {{ meta.generated_at | localtime }}{% if meta.model %} · {{ meta.model }}{% endif %}
   </div>
   {% else %}
   <div class="muted">No retrospective yet. Click <strong>Generate</strong> to write one over the

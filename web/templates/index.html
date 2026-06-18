@@ -24,7 +24,7 @@
           #{{ draft.id }} ·
           <span class="pill draft">draft</span>
           · {{ draft.tweet_count }} tweets · {{ draft.theme_count }} themes
-          {% if draft.started_at %}· started {{ draft.started_at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+          {% if draft.started_at %}· started {{ draft.started_at | localtime }}{% endif %}
         </div>
         <div style="margin-top:8px;">
           {% if draft.digest_path %}<a href="/digest/{{ draft.id }}">View live digest →</a>{% endif %}
@@ -59,7 +59,7 @@
           #{{ last_run.id }} ·
           <span class="pill {{ last_run.status.value }}">{{ last_run.status.value }}</span>
           · {{ last_run.tweet_count }} tweets · {{ last_run.theme_count }} themes
-          {% if last_run.started_at %}· {{ last_run.started_at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+          {% if last_run.started_at %}· {{ last_run.started_at | localtime }}{% endif %}
         </div>
       {% else %}
         <div class="muted" style="margin-top:6px;">No runs yet.</div>

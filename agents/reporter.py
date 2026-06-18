@@ -8,6 +8,7 @@ from __future__ import annotations
 import smtplib
 import ssl
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -34,6 +35,13 @@ class Reporter(Agent):
             autoescape=select_autoescape(["html"]),
         )
 
+    def _tz(self) -> ZoneInfo:
+        """Configured display timezone, falling back to UTC."""
+        try:
+            return ZoneInfo(self.ctx.app_settings.timezone)
+        except (ZoneInfoNotFoundError, ValueError, AttributeError):
+            return ZoneInfo("UTC")
+
     def run(self, state: DigestRun) -> DigestRun:
         by_id = {t.tweet_id: t for t in state.filtered_tweets}
         important = load_important()                 # {handle_lower: color}
@@ -54,10 +62,10 @@ class Reporter(Agent):
                 if t.handle.lower() in important:
                     legend[t.handle] = important[t.handle.lower()]
 
-        now = datetime.now()
+        now = datetime.now(self._tz())
         html = self._env.get_template("digest.html").render(
             date=now.strftime("%A, %B %d, %Y"),
-            generated_at=now.strftime("%Y-%m-%d %H:%M"),
+            generated_at=now.strftime("%Y-%m-%d %H:%M %Z"),
             total_tweets=len(state.filtered_tweets),
             themes=themes,
             vip=important,        # {handle_lower: color} for per-tweet lookup

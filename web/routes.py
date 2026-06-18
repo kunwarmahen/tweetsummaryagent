@@ -1,7 +1,7 @@
 """HTTP routes for the config UI."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone as _dt_timezone
 from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
@@ -31,6 +31,34 @@ def _valid_tz(name: str) -> str:
         return name
     except (ZoneInfoNotFoundError, ValueError):
         return "UTC"
+
+
+# Display timezone for rendering stored (UTC) timestamps in the UI. Cached so templates
+# don't hit the DB per row; refreshed whenever settings are saved.
+_display_tz_name: str | None = None
+
+
+def _display_tz() -> ZoneInfo:
+    global _display_tz_name
+    if _display_tz_name is None:
+        with get_session() as s:
+            _display_tz_name = get_settings(s).timezone
+    try:
+        return ZoneInfo(_display_tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
+
+
+def localtime(dt: datetime | None, fmt: str = "%Y-%m-%d %H:%M %Z") -> str:
+    """Jinja filter: render a stored (naive = UTC) datetime in the configured timezone."""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_dt_timezone.utc)
+    return dt.astimezone(_display_tz()).strftime(fmt)
+
+
+templates.env.filters["localtime"] = localtime
 
 
 # ---------------------------------------------------------------- Dashboard
@@ -481,6 +509,8 @@ def save_settings(
         cfg.schedule_hour = max(0, min(23, schedule_hour))
         cfg.schedule_minute = max(0, min(59, schedule_minute))
         cfg.timezone = _valid_tz(timezone)
+        global _display_tz_name
+        _display_tz_name = cfg.timezone
         cfg.collection_interval_hours = max(1, collection_interval_hours)
         cfg.process_interval_hours = max(1, process_interval_hours)
         cfg.collection_enabled = collection_enabled is not None

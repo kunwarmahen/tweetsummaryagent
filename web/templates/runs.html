@@ -19,7 +19,7 @@
     <tr>
       <td><a href="/runs/{{ r.id }}">#{{ r.id }}</a>{% if r.source_run_id %} <span class="muted" title="replay of #{{ r.source_run_id }}">↺</span>{% endif %}</td>
       <td><span class="pill {{ r.status.value }}">{{ r.status.value }}</span></td>
-      <td class="muted">{{ r.started_at.strftime('%Y-%m-%d %H:%M') if r.started_at else '' }}</td>
+      <td class="muted">{{ r.started_at | localtime }}</td>
       <td>{{ r.tweet_count }}</td>
       <td>{{ r.theme_count }}</td>
       <td>

@@ -7,7 +7,7 @@
     <p class="sub">
       <span class="pill {{ run.status.value }}">{{ run.status.value }}</span>
       {% if run.source_run_id %} · replay of <a href="/runs/{{ run.source_run_id }}">#{{ run.source_run_id }}</a>{% endif %}
-      {% if run.started_at %} · {{ run.started_at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+      {% if run.started_at %} · {{ run.started_at | localtime }}{% endif %}
     </p>
   </div>
   <a class="btn btn-ghost btn-sm" href="/runs">← All runs</a>
