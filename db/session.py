@@ -47,6 +47,7 @@ _MIGRATIONS = {
         "collection_interval_hours": "INTEGER DEFAULT 3",
         "process_enabled": "BOOLEAN DEFAULT 0",
         "process_interval_hours": "INTEGER DEFAULT 4",
+        "timezone": "VARCHAR DEFAULT 'America/New_York'",
     },
     "account_settings": {
         "important": "BOOLEAN DEFAULT 0",

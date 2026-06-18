@@ -14,7 +14,18 @@
     <div class="row">
       <div><label>Hour (0–23)</label><input type="number" name="schedule_hour" min="0" max="23" value="{{ cfg.schedule_hour }}"></div>
       <div><label>Minute (0–59)</label><input type="number" name="schedule_minute" min="0" max="59" value="{{ cfg.schedule_minute }}"></div>
+      <div>
+        <label>Timezone</label>
+        <select name="timezone">
+          {% for tz in timezones %}
+          <option value="{{ tz }}" {% if tz == cfg.timezone %}selected{% endif %}>{{ tz }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
+    <p class="muted" style="margin-top:4px;font-size:12px;">
+      The hour/minute above are interpreted in this timezone (the container clock runs on UTC).
+    </p>
     <div class="check">
       <input type="checkbox" id="se" name="schedule_enabled" {% if cfg.schedule_enabled %}checked{% endif %}>
       <label for="se" style="margin:0;">Enable daily delivery</label>

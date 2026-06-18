@@ -7,6 +7,7 @@ The schedule is read from the DB and can be changed live from the UI via resched
 from __future__ import annotations
 
 import logging
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -22,6 +23,15 @@ JOB_ID_COLLECT = "collection"
 JOB_ID_PROCESS = "process_draft"
 
 _scheduler: BackgroundScheduler | None = None
+
+
+def _resolve_tz(name: str) -> ZoneInfo:
+    """Look up an IANA timezone, falling back to UTC if it's missing/invalid."""
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning("Unknown timezone %r; falling back to UTC", name)
+        return ZoneInfo("UTC")
 
 
 def _job() -> None:
@@ -76,6 +86,7 @@ def reschedule() -> None:
         enabled, hour, minute = cfg.schedule_enabled, cfg.schedule_hour, cfg.schedule_minute
         collect_on, collect_hrs = cfg.collection_enabled, max(1, cfg.collection_interval_hours)
         process_on, process_hrs = cfg.process_enabled, max(1, cfg.process_interval_hours)
+        tz = _resolve_tz(cfg.timezone)
 
     for job_id in (JOB_ID, JOB_ID_META, JOB_ID_COLLECT, JOB_ID_PROCESS):
         if _scheduler.get_job(job_id):
@@ -94,13 +105,13 @@ def reschedule() -> None:
         # When collection runs on its own schedule, the evening job just delivers the archive;
         # otherwise it does the legacy all-in-one scrape + summarize + send.
         delivery = _deliver_job if collect_on else _job
-        _scheduler.add_job(delivery, CronTrigger(hour=hour, minute=minute),
+        _scheduler.add_job(delivery, CronTrigger(hour=hour, minute=minute, timezone=tz),
                            id=JOB_ID, replace_existing=True, misfire_grace_time=3600)
         # Weekly retrospective, Sundays at the same time of day as the delivery.
-        _scheduler.add_job(_meta_job, CronTrigger(day_of_week="sun", hour=hour, minute=minute),
+        _scheduler.add_job(_meta_job, CronTrigger(day_of_week="sun", hour=hour, minute=minute, timezone=tz),
                            id=JOB_ID_META, replace_existing=True, misfire_grace_time=3600)
-        logger.info("%s scheduled at %02d:%02d; weekly meta-digest on Sundays",
-                    "Delivery" if collect_on else "Daily digest", hour, minute)
+        logger.info("%s scheduled at %02d:%02d %s; weekly meta-digest on Sundays",
+                    "Delivery" if collect_on else "Daily digest", hour, minute, tz)
     else:
         logger.info("Daily delivery schedule disabled")
 

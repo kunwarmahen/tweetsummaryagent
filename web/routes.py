@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -20,6 +21,16 @@ templates = Jinja2Templates(directory=str(_TEMPLATES))
 router = APIRouter()
 
 is_running = pipeline.is_running
+
+
+def _valid_tz(name: str) -> str:
+    """Keep only a real IANA timezone; otherwise leave the schedule on UTC."""
+    name = (name or "").strip()
+    try:
+        ZoneInfo(name)
+        return name
+    except (ZoneInfoNotFoundError, ValueError):
+        return "UTC"
 
 
 # ---------------------------------------------------------------- Dashboard
@@ -437,6 +448,7 @@ def settings_page(request: Request, tg: str | None = None):
         "tg_token_set": bool(boot.telegram_bot_token),
         "tg_chat_set": bool(boot.telegram_chat_id),
         "running": is_running(),
+        "timezones": sorted(available_timezones()),
     })
 
 
@@ -444,6 +456,7 @@ def settings_page(request: Request, tg: str | None = None):
 def save_settings(
     schedule_hour: int = Form(...),
     schedule_minute: int = Form(...),
+    timezone: str = Form("America/New_York"),
     time_window_hours: int = Form(...),
     max_tweets_per_account: int = Form(...),
     max_themes: int = Form(...),
@@ -467,6 +480,7 @@ def save_settings(
         cfg = get_settings(s)
         cfg.schedule_hour = max(0, min(23, schedule_hour))
         cfg.schedule_minute = max(0, min(59, schedule_minute))
+        cfg.timezone = _valid_tz(timezone)
         cfg.collection_interval_hours = max(1, collection_interval_hours)
         cfg.process_interval_hours = max(1, process_interval_hours)
         cfg.collection_enabled = collection_enabled is not None

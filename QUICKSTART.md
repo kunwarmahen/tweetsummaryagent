@@ -81,7 +81,8 @@ Open the printed HTML file in a browser to see your themed digest.
   or one of the recently-seen accounts); accounts without an override use the global default.
   Mark accounts **★ Important** to color-highlight their tweets (legend included), guarantee they
   appear, and float them to the top of the digest; each gets its own auto-assigned (editable) color.
-- **Settings** — the three **schedules** (Delivery / Collection / Processing — see below), time
+- **Settings** — the three **schedules** (Delivery / Collection / Processing — see below) with a
+  **Timezone** for the daily delivery, time
   window, retweets, **thread stitching**, exclude-keywords, model, max themes, topics,
   **digest style** (themed / per-account / highlights), and **clustering** (LLM one-prompt vs.
   embedding-based with `nomic-embed-text` + similarity threshold). Plus **Telegram** test/chat-id
@@ -98,7 +99,9 @@ Open the printed HTML file in a browser to see your themed digest.
 The scheduler runs inside `serve` — keep that process alive. There are two ways to run it:
 
 - **Simple (default):** one daily run at the time set in **Settings → Delivery schedule**
-  (default 08:00) that scrapes, summarizes, and delivers in one go.
+  (default 08:00) that scrapes, summarizes, and delivers in one go. The hour/minute are
+  interpreted in the **Timezone** you pick there (default `America/New_York`), not the
+  container's UTC clock.
 - **Decoupled:** enable **Collection schedule** (scrape every N hours) and **Processing schedule**
   (rebuild the live "Today" draft every M hours). The portal then shows the day's digest as it
   builds up, while **Delivery** still emails/Telegrams once a day in the evening. Tweets are only

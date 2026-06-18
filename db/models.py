@@ -40,6 +40,9 @@ class AppSettings(SQLModel, table=True):
     schedule_hour: int = 8
     schedule_minute: int = 0
     schedule_enabled: bool = True
+    # IANA timezone the schedule hour/minute are interpreted in. The container clock is
+    # usually UTC, so without this the evening send fires at the wrong wall-clock time.
+    timezone: str = "America/New_York"
 
     # Collection schedule — scrape new tweets into the archive every N hours.
     # When enabled, the delivery job reads from the archive instead of scraping inline.

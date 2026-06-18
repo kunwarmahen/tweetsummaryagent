@@ -30,7 +30,7 @@ so the portal shows the day as it builds up while delivery stays once-a-day:
 |-------|------|--------------|
 | **Collect** (`pipeline.collect`) | every *N* hours (`collection_interval_hours`) | Scrape new tweets → `raw_tweets`. No filter/summary/delivery. The Collector early-stops on already-archived tweets, so frequent runs stay light and avoid re-hammering X. |
 | **Process** (`pipeline.refresh_draft`) | every *M* hours (`process_interval_hours`) | Rebuild the **live "Today" draft** digest from the archive window (Filter → Thread → Cluster → Summarize → render). `deliver=False`; **does not** persist tweets. Reuses one open `draft` run row so the portal shows a single growing digest. |
-| **Deliver** (`pipeline.deliver`) | once daily (`schedule_hour`/`minute`) | Re-process the window to be current, **send** (email/Telegram), `_persist_tweets` (commit cross-day dedup), index theme continuity, and finalize the draft → `success`. |
+| **Deliver** (`pipeline.deliver`) | once daily (`schedule_hour`/`minute`, in `timezone`) | Re-process the window to be current, **send** (email/Telegram), `_persist_tweets` (commit cross-day dedup), index theme continuity, and finalize the draft → `success`. |
 
 The key invariant: **`_persist_tweets` runs only at delivery, never during processing.** So delivery
 is the dedup boundary — everything collected since the last delivery is "pending" and shown in every
@@ -42,6 +42,10 @@ repeat tomorrow. Theme continuity is likewise indexed only for the *finalized* (
   Process run on their own `IntervalTrigger`s.
 - *Collection disabled* (default) → the evening job is the **legacy all-in-one** `run()` (scrape +
   summarize + deliver inline) — unchanged behavior, so single-job setups are unaffected.
+
+The daily delivery + weekly meta-digest `CronTrigger`s are built with the `timezone` setting
+(IANA, default `America/New_York`) so `schedule_hour`/`minute` mean local wall-clock time, not the
+container's UTC clock. The hourly `IntervalTrigger`s (Collect/Process) are timezone-agnostic.
 
 ## Pipeline
 
@@ -143,7 +147,7 @@ replay — the `source_run_id`). The UI exposes this:
 
 | Table | Purpose |
 |-------|---------|
-| `settings` | Schedule, Ollama model, digest style, time-window, max tweets/themes, include-retweets, exclude-keywords, thread stitching (+ gap), clustering method + embedding model + similarity threshold. |
+| `settings` | Schedule (+ delivery `timezone`), Ollama model, digest style, time-window, max tweets/themes, include-retweets, exclude-keywords, thread stitching (+ gap), clustering method + embedding model + similarity threshold. |
 | `excluded_accounts` | Handles to skip when scraping the following list (the blocklist). |
 | `account_settings` | Per-account overrides keyed by handle — `max_tweets` (falls back to `settings.max_tweets_per_account`), plus `important` + highlight `color` for VIP accounts. |
 | `topics` | Optional themes to bias/filter toward. |

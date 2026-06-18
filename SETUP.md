@@ -115,7 +115,8 @@ it survives filtering and pipeline failures. SQLite handles this comfortably at 
 - **Accounts** — exclude accounts from scraping, and set a **per-account tweet limit** (any handle
   or a recently-seen one); accounts without an override use the global default.
 - **Settings** — three **schedules** (Delivery evening send / Collection every N h / Processing
-  live-draft every M h), time window, retweets, thread stitching, exclude-keywords, model,
+  live-draft every M h) with a **Timezone** for the daily delivery (the container clock is UTC,
+  so set this to your local zone), time window, retweets, thread stitching, exclude-keywords, model,
   max themes, topics, digest style (themed / per-account / highlights), and clustering
   (LLM one-prompt vs. embedding-based + similarity threshold).
 - **Runs** — history with status and ✉️/📨 delivery icons; *View* a past digest, **Resume** a
