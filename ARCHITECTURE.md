@@ -29,17 +29,24 @@ so the portal shows the day as it builds up while delivery stays once-a-day:
 | Phase | When | What it does |
 |-------|------|--------------|
 | **Collect** (`pipeline.collect`) | every *N* hours (`collection_interval_hours`) | Scrape new tweets → `raw_tweets`. No filter/summary/delivery. The Collector early-stops on already-archived tweets, so frequent runs stay light and avoid re-hammering X. |
-| **Process** (`pipeline.refresh_draft`) | every *M* hours (`process_interval_hours`) | Rebuild the **live "Today" draft** digest from the archive window (Filter → Thread → Cluster → Summarize → render). `deliver=False`; **does not** persist tweets. Reuses one open `draft` run row so the portal shows a single growing digest. |
+| **Process** (`pipeline.refresh_draft`) | every *M* hours (`process_interval_hours`) | Rebuild the **live "Today" draft** digest from the archive window (Filter → Thread → Cluster → Summarize → render). `deliver=False`; **does not** persist tweets. Reuses one open `draft` run row so the portal shows a single growing digest. Uses the same since-last-delivery window as delivery (below). |
 
 Both background phases log a `job_runs` row per fire (even on no-op/error) so each schedule's real
 cadence is auditable on the **Activity** page, independent of the `digest_runs`/`draft` row a process
 cycle reuses or the `raw_tweets` a collect cycle appends to.
-| **Deliver** (`pipeline.deliver`) | once daily (`schedule_hour`/`minute`, in `timezone`) | Re-process the window to be current, **send** (email/Telegram), `_persist_tweets` (commit cross-day dedup), index theme continuity, and finalize the draft → `success`. |
+| **Deliver** (`pipeline.deliver`) | once daily (`schedule_hour`/`minute`, in `timezone`) | Re-process the window to be current, **send** (email/Telegram), `_persist_tweets` (commit cross-day dedup), index theme continuity, and finalize the draft → `success`. Restamps the run's `started_at` to the delivery time so it's dated by its send day, not by when the draft first opened. |
 
 The key invariant: **`_persist_tweets` runs only at delivery, never during processing.** So delivery
 is the dedup boundary — everything collected since the last delivery is "pending" and shown in every
 intraday refresh (a growing daily view, not disjoint slices); delivering flushes it so it won't
 repeat tomorrow. Theme continuity is likewise indexed only for the *finalized* (delivered) digest.
+
+**Window = since the last delivery, not a fixed 24h.** `_delivery_window_hours()` sizes the
+look-back to span the gap since the last emailed/Telegram send, with `time_window_hours` as a
+*floor*. Both `deliver()` and `refresh_draft()` apply it to the archive load **and** the Filter
+cutoff, so a tweet collected between two runs can never age out of a fixed window and be silently
+dropped. A `min_window_hours` arg forces a wider one-off catch-up (e.g. to recover tweets a past
+run dropped); cross-day dedup still prevents re-sending anything already delivered.
 
 **Modes** (`scheduler.reschedule`, re-applied live on settings save):
 - *Collection enabled* → the evening job is delivery-from-archive (`_deliver_job`); Collect and
@@ -78,7 +85,7 @@ Collector ─► Filter ─► [Threader] ─► [Clusterer] ─► Summarizer �
 | Agent | Responsibility |
 |-------|----------------|
 | **Collector** | Reuse saved browser session; enumerate the following list (minus the blocklist); scrape each account's tweets in the time window (text, timestamp, links, metrics) into the state. **Early-stop dedup** (`skip_known`, on by default): loads the set of already-archived `tweet_id`s and stops scrolling an account once it reaches a known tweet (timelines are newest-first), so it fetches only genuinely new tweets — essential for the every-few-hours collection schedule. **Round-robin coverage** (`collect_cursor`): each run starts where the last one stopped and advances the cursor past the accounts it reached, so a run that ends early never permanently starves the tail of the following list. **Throttle handling:** a run of `_EMPTY_STREAK_LIMIT` (8) consecutive empty timelines triggers a cooldown-and-continue (up to `_MAX_COOLDOWNS`); only sustained emptiness stops the run early — and the cursor then resumes those accounts next time. |
-| **Filter** | Drop exclude-keyword hits and empties; keep the time window; dedup within batch and against the `tweets` table (cross-day). |
+| **Filter** | Drop exclude-keyword hits and empties; keep the effective time window (the since-last-delivery window, not a hard 24h); dedup within batch and against the `tweets` table (cross-day). |
 | **Threader** *(optional)* | Merge an author's self-reply chain into one item (text joined, max engagement, `member_ids` kept for dedup). `reply` mode (default) chains tweets flagged `is_self_reply` — accurate and gap-independent; `time` mode falls back to merging within `thread_gap_minutes`. Retweets / undated tweets pass through. |
 
 > **Reply metadata & the `with_replies` timeline.** X's default "Posts" tab hides thread
@@ -88,7 +95,7 @@ Collector ─► Filter ─► [Threader] ─► [Clusterer] ─► Summarizer �
 > others). The Threader then chains the self-replies onto their root. Other modes use the cleaner
 > Posts tab.
 | **Clusterer** *(optional)* | Themed + embedding mode only. Embeds each tweet (`nomic-embed-text`), greedily groups by cosine similarity (pure-Python, no numpy) against running centroids, caps to `max_themes`. Produces tweet groups for the Summarizer to title. |
-| **Summarizer** | Branches on `digest_style`. `themed`: one `gemma4:e4b` prompt clusters + narrates (index-referenced), or summarizes pre-made embedding clusters. `per_account`: one summary per account (most active first, capped). `highlights`: top tweets by engagement, one line each. |
+| **Summarizer** | Branches on `digest_style`. `themed`: one `gemma4:e4b` prompt clusters + narrates (index-referenced), or summarizes pre-made embedding clusters. `per_account`: one summary per account (most active first, capped). `highlights`: top tweets by engagement, one line each. Every Ollama call sizes `num_ctx` to the prompt (`_ctx_window`) — Ollama silently truncates oversized prompts, which otherwise collapses a whole-day themed digest to 0 themes; if the single-prompt themed path still yields 0 themes, it falls back to `_summarize_chunked` (batch, then keep the strongest themes). |
 | **Reporter** | Resolve theme tweet-IDs to full tweets, apply **important-account** highlighting (`agents/priority.py`: float VIP tweets to the top within/across themes, guarantee orphaned VIP tweets via a synthetic "⭐" section, pass colors + legend to the template), render the newsletter (`web/templates/digest.html`), save to `data/digests/`, and deliver: email via SMTP (STARTTLS) and Telegram (auto-split, VIPs ⭐-marked) — each gated on creds + themes + the `deliver` flag. |
 
 ## Run lifecycle, snapshots & recovery

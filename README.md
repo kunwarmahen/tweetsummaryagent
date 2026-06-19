@@ -2,8 +2,9 @@
 
 A daily **themed-newsletter digest** of tweets from the accounts you follow on X/Twitter.
 
-It reuses your logged-in Chrome session (Playwright), scrapes the last 24 hours of tweets
-from your following list (minus any accounts you've excluded), groups them into themes
+It reuses your logged-in Chrome session (Playwright), scrapes recent tweets (everything since
+your last digest, at least 24 hours) from your following list (minus any accounts you've
+excluded), groups them into themes
 with a local LLM (Ollama `gemma4:e4b`), and delivers a newsletter-style summary by email
 and as a saved HTML file. Everything is configurable through a small web UI.
 

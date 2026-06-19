@@ -9,6 +9,7 @@ NOTE: the Collector uses Playwright's sync API, so callers inside an asyncio eve
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -402,6 +403,38 @@ def _load_archive_window(hours: int) -> list[TweetItem]:
     return items
 
 
+def _last_delivery_at() -> datetime | None:
+    """finished_at (naive UTC) of the most recent run that actually emailed or sent Telegram."""
+    from sqlmodel import select
+
+    with get_session() as session:
+        row = session.exec(
+            select(DigestRunRow)
+            .where((DigestRunRow.emailed == True) | (DigestRunRow.telegram_sent == True))  # noqa: E712
+            .where(DigestRunRow.finished_at.is_not(None))
+            .order_by(DigestRunRow.finished_at.desc())
+        ).first()
+        return row.finished_at if row else None
+
+
+def _delivery_window_hours(floor_hours: int, min_hours: int | None = None) -> int:
+    """Hours to look back so a run captures *everything since the last delivery*, not a fixed slice.
+
+    The configured `time_window_hours` is a floor: we extend it to span the gap since the last
+    successful delivery (rounded up, +1h margin) so tweets collected between two runs are never
+    dropped as "old". `min_hours` lets a one-off catch-up force a wider reach. Cross-day dedup
+    still prevents re-sending anything already delivered.
+    """
+    eff = floor_hours
+    last = _last_delivery_at()
+    if last is not None:
+        gap = math.ceil((datetime.utcnow() - last).total_seconds() / 3600) + 1
+        eff = max(eff, gap)
+    if min_hours:
+        eff = max(eff, min_hours)
+    return eff
+
+
 def collect(trigger: str = "schedule") -> int:
     """Phase 1: scrape new tweets into the raw archive. No filter/summary/digest/delivery.
 
@@ -550,6 +583,8 @@ def refresh_draft(trigger: str = "schedule") -> DigestRun | None:
     """
     job_id = _start_job_run("process", trigger)
     app_settings = _load_app_settings({"deliver": False})
+    # Cover everything since the last delivery (the Filter also reads this), not a fixed 24h slice.
+    app_settings.time_window_hours = _delivery_window_hours(app_settings.time_window_hours)
     raw = _load_archive_window(app_settings.time_window_hours)
     if not raw:
         logger.info("Draft refresh: no tweets in the archive window yet.")
@@ -579,25 +614,29 @@ def refresh_draft(trigger: str = "schedule") -> DigestRun | None:
     return state
 
 
-def deliver() -> DigestRun | None:
+def deliver(min_window_hours: int | None = None) -> DigestRun | None:
     """Phase 3: finalize and send the day's digest, then commit cross-day dedup.
 
     Takes over the open draft row (or creates one), re-processes the archive window to be
     current, delivers via email/Telegram, persists the digested tweets (so they won't repeat
     tomorrow), indexes theme continuity, and marks the run success.
+
+    `min_window_hours` forces a wider look-back for a one-off catch-up (e.g. to recover tweets a
+    past run dropped); normal runs leave it None and span from the last delivery.
     """
     app_settings = _load_app_settings({"deliver": True})
+    # Cover everything since the last delivery (the Filter also reads this), not a fixed 24h slice.
+    app_settings.time_window_hours = _delivery_window_hours(app_settings.time_window_hours,
+                                                            min_window_hours)
     raw = _load_archive_window(app_settings.time_window_hours)
     if not raw:
         logger.info("Delivery: nothing in the archive window to send.")
         return None
 
     ctx = AgentContext(config=settings, app_settings=app_settings, logger=logger)
-    run_id = _current_draft_id()
-    if run_id is None:
-        run_id = _create_draft_row()
-        _record_params(run_id, app_settings, source_run_id=None)
-    _mark_running(run_id)
+    run_id = _current_draft_id() or _create_draft_row()
+    _record_params(run_id, app_settings, source_run_id=None)  # record the effective window/params
+    _mark_running(run_id, reset_start=True)   # date the run by its delivery, not draft birth
     state = DigestRun(run_id=run_id)
     state.raw_tweets = raw
     logger.info("=== Delivering digest (run %s): %d archived tweets in window ===", run_id, len(raw))
@@ -734,12 +773,16 @@ def replay(source_run_id: int, overrides: dict | None = None, deliver: bool = Fa
     return state
 
 
-def _mark_running(run_id: int) -> None:
+def _mark_running(run_id: int, reset_start: bool = False) -> None:
     with get_session() as session:
         row = session.get(DigestRunRow, run_id)
         if row:
             row.status = RunStatus.running
             row.error = None
+            # Delivery reuses a draft row born after the *previous* send; restamp so the finalized
+            # run is dated by its delivery, not by when the draft first opened (the evening before).
+            if reset_start:
+                row.started_at = datetime.utcnow()
             session.add(row)
             session.commit()
 

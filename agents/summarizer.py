@@ -6,6 +6,8 @@ referenced by short index so the model doesn't have to echo long IDs; we map the
 """
 from __future__ import annotations
 
+import math
+
 import ollama
 
 from agents.base import Agent
@@ -15,6 +17,21 @@ from db.models import DigestStyle
 from state import DigestRun, ThemeCluster, TweetItem
 
 _MAX_TEXT = 400   # truncate each tweet to keep the prompt tight
+
+# Ollama defaults to a small context window (~4k tokens) and *silently truncates* anything
+# longer, so a whole-day prompt (100+ tweets) gets clipped and the model summarizes only a
+# fragment — or returns nothing (the "0 themes" failure). We size num_ctx to the prompt instead.
+_REPLY_TOKENS = 1500          # headroom for the model's JSON reply
+_CHUNK_SIZE = 60              # tweets per call in the chunked fallback
+
+
+def _ctx_window(prompt: str) -> int:
+    """Pick an Ollama num_ctx big enough for prompt+reply (~4 chars/token), snapped + capped."""
+    est = len(prompt) // 4 + _REPLY_TOKENS
+    for window in (4096, 8192, 16384, 32768):
+        if est <= window:
+            return window
+    return 32768
 
 _SYSTEM = (
     "You are an editor producing a concise daily briefing from tweets. "
@@ -119,7 +136,7 @@ class Summarizer(Agent):
         resp = client.chat(
             model=self.ctx.app_settings.ollama_model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            format="json", options={"temperature": 0.3},
+            format="json", options={"temperature": 0.3, "num_ctx": _ctx_window(prompt)},
         )
         try:
             return extract_json(resp["message"]["content"])
@@ -211,7 +228,7 @@ class Summarizer(Agent):
             resp = client.chat(
                 model=model,
                 messages=[{"role": "system", "content": _SYSTEM}, {"role": "user", "content": prompt}],
-                format="json", options={"temperature": 0.3},
+                format="json", options={"temperature": 0.3, "num_ctx": _ctx_window(prompt)},
             )
             try:
                 data = extract_json(resp["message"]["content"])
@@ -229,33 +246,12 @@ class Summarizer(Agent):
         self.log.info("Produced %d themes", len(out))
         return state
 
-    def _summarize_single_prompt(self, state: DigestRun) -> DigestRun:
-        tweets = state.filtered_tweets
-        model = self.ctx.app_settings.ollama_model
-        max_themes = self.ctx.app_settings.max_themes
-        topics = self._topics()
-        prompt = _build_prompt(tweets, topics, max_themes)
-
-        self.log.info("Summarizing %d tweets with %s", len(tweets), model)
-        client = ollama.Client(host=settings.ollama_url)
-        resp = client.chat(
-            model=model,
-            messages=[{"role": "system", "content": _SYSTEM}, {"role": "user", "content": prompt}],
-            format="json",
-            options={"temperature": 0.3},
-        )
-        content = resp["message"]["content"]
-
-        try:
-            data = extract_json(content)
-        except ValueError:
-            self.log.error("Could not parse model JSON; raw head: %s", content[:200])
-            raise
-
+    def _themes_from_response(self, data, tweets: list[TweetItem]) -> list[ThemeCluster]:
+        """Map an LLM themes response (indices into `tweets`) back to ThemeClusters."""
         themes_raw = data.get("themes", data) if isinstance(data, dict) else data
         index_to_id = {i: t.tweet_id for i, t in enumerate(tweets, 1)}
 
-        themes: list[ThemeCluster] = []
+        out: list[ThemeCluster] = []
         for th in themes_raw or []:
             if not isinstance(th, dict):
                 continue
@@ -264,10 +260,57 @@ class Summarizer(Agent):
             summary = (th.get("summary") or "").strip()
             if not ids or not summary:
                 continue
-            themes.append(ThemeCluster(title=title, summary=summary, tweet_ids=ids))
+            out.append(ThemeCluster(title=title, summary=summary, tweet_ids=ids))
+        return out
+
+    def _summarize_single_prompt(self, state: DigestRun) -> DigestRun:
+        tweets = state.filtered_tweets
+        max_themes = self.ctx.app_settings.max_themes
+        prompt = _build_prompt(tweets, self._topics(), max_themes)
+
+        self.log.info("Summarizing %d tweets with %s", len(tweets), self.ctx.app_settings.ollama_model)
+        data = self._chat_json(prompt)
+        themes = self._themes_from_response(data, tweets) if data is not None else []
+
+        # A small local model can collapse a whole-day prompt to 0/1 themes. Rather than ship a
+        # gutted digest, retry in smaller batches that stay coherent.
+        if not themes:
+            self.log.warning("Single-prompt summary produced 0 themes from %d tweets; "
+                             "falling back to chunked summarization", len(tweets))
+            return self._summarize_chunked(state)
 
         state.themes = themes[:max_themes]
         self.log.info("Produced %d themes", len(state.themes))
+        return state
+
+    def _summarize_chunked(self, state: DigestRun) -> DigestRun:
+        """Fallback: summarize the day in batches, then keep the strongest themes overall.
+
+        Each batch is small enough to stay coherent for a local model; we split the theme budget
+        across batches, collect all themes, and rank them by member engagement to keep the top
+        `max_themes`. Guarantees non-empty output whenever the model returns anything usable.
+        """
+        tweets = state.filtered_tweets
+        max_themes = self.ctx.app_settings.max_themes
+        topics = self._topics()
+        chunks = [tweets[i:i + _CHUNK_SIZE] for i in range(0, len(tweets), _CHUNK_SIZE)]
+        per_chunk = max(2, math.ceil(max_themes / len(chunks)) + 1)
+        self.log.info("Chunked summary: %d tweets in %d chunk(s), up to %d themes each",
+                      len(tweets), len(chunks), per_chunk)
+
+        collected: list[ThemeCluster] = []
+        for chunk in chunks:
+            data = self._chat_json(_build_prompt(chunk, topics, per_chunk))
+            if data is not None:
+                collected.extend(self._themes_from_response(data, chunk))
+
+        by_id = {t.tweet_id: t for t in tweets}
+        collected.sort(
+            key=lambda th: sum(by_id[i].likes + by_id[i].retweets for i in th.tweet_ids if i in by_id),
+            reverse=True,
+        )
+        state.themes = collected[:max_themes]
+        self.log.info("Produced %d themes (chunked)", len(state.themes))
         return state
 
     def _topics(self) -> list[str]:

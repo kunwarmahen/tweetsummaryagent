@@ -73,6 +73,37 @@ def test_delivery_finalizes_open_draft(mem_db):
     assert pipeline._current_draft_id() is None
 
 
+# ---------------------------------------------------------------- delivery window
+def _finished_delivery(engine, finished_at, emailed=True):
+    with Session(engine) as s:
+        s.add(DigestRunRow(status=RunStatus.success, finished_at=finished_at, emailed=emailed))
+        s.commit()
+
+
+def test_delivery_window_floor_when_recent_delivery(mem_db):
+    """A recent delivery keeps the configured floor (24h)."""
+    _finished_delivery(mem_db, datetime.utcnow() - timedelta(hours=6))
+    assert pipeline._delivery_window_hours(24) == 24
+
+
+def test_delivery_window_spans_gap_since_last_delivery(mem_db):
+    """A delivery 40h ago widens the window past the floor so nothing in between is dropped."""
+    _finished_delivery(mem_db, datetime.utcnow() - timedelta(hours=40))
+    assert pipeline._delivery_window_hours(24) >= 41        # gap + margin, beats the 24h floor
+
+
+def test_delivery_window_ignores_undelivered_runs(mem_db):
+    """Draft/non-emailed runs don't count as deliveries; with none, fall back to the floor."""
+    _finished_delivery(mem_db, datetime.utcnow() - timedelta(hours=40), emailed=False)
+    assert pipeline._delivery_window_hours(24) == 24
+
+
+def test_delivery_window_min_hours_forces_catch_up(mem_db):
+    """A one-off catch-up can force a wider reach than both floor and gap."""
+    _finished_delivery(mem_db, datetime.utcnow() - timedelta(hours=2))
+    assert pipeline._delivery_window_hours(24, min_hours=72) == 72
+
+
 # ---------------------------------------------------------------- collector early-stop
 class _FakePage:
     """Returns the same batch of tweets on every evaluate(), counting scrolls."""
