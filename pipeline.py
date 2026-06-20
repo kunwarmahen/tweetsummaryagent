@@ -107,10 +107,21 @@ def refresh_draft_guarded(trigger: str = "schedule") -> DigestRun | None:
         _run_lock.release()
 
 
+_DELIVER_LOCK_WAIT_SECONDS = 30 * 60
+
+
 def deliver_guarded() -> DigestRun | None:
-    """Finalize + send the day's digest (Phase 3) unless a run is already in progress."""
-    if not _run_lock.acquire(blocking=False):
-        logger.info("A run is already in progress; skipping delivery.")
+    """Finalize + send the day's digest (Phase 3).
+
+    Unlike the other guards, delivery is the once-daily critical job and must not be
+    dropped just because a collect/process job happens to be mid-run when its cron fires.
+    APScheduler runs this in its own thread, so we *wait* for the shared lock (a collect
+    scrape holds it ~20 min) instead of skipping. Bounded so a wedged run can't hang the
+    scheduler thread forever; the missed-delivery alarm is louder than a brief stall.
+    """
+    if not _run_lock.acquire(blocking=True, timeout=_DELIVER_LOCK_WAIT_SECONDS):
+        logger.error("Delivery could not acquire the run lock within %d s; skipping delivery.",
+                     _DELIVER_LOCK_WAIT_SECONDS)
         return None
     try:
         return deliver()

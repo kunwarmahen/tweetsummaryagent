@@ -54,6 +54,17 @@ run dropped); cross-day dedup still prevents re-sending anything already deliver
 - *Collection disabled* (default) → the evening job is the **legacy all-in-one** `run()` (scrape +
   summarize + deliver inline) — unchanged behavior, so single-job setups are unaffected.
 
+**Shared run-lock — and why delivery *waits* on it.** All pipeline entry points (collect, process,
+deliver, run, resume, replay) serialize on a single `pipeline._run_lock` so the scraper, draft
+refresh, and the UI "Run now" never touch the DB/archive concurrently. The collect/process/run
+guards acquire it **non-blocking** and simply *skip* if busy (the next interval fire will catch up).
+Delivery is the exception: it is the **once-daily critical job**, so `deliver_guarded` acquires the
+lock **blocking** (bounded ~30 min). A `collect` scrape holds the lock ~20 min and runs every few
+hours, so it periodically lands right on the evening `CronTrigger`; a non-blocking deliver would
+silently drop that day's send (the cron has no jobstore and won't retry until tomorrow). Blocking
+makes delivery queue behind the in-flight scrape instead of being skipped. *(Regression fixed
+2026-06-20 after a collect/deliver collision ate a nightly send.)*
+
 The daily delivery + weekly meta-digest `CronTrigger`s are built with the `timezone` setting
 (IANA, default `America/New_York`) so `schedule_hour`/`minute` mean local wall-clock time, not the
 container's UTC clock. The Collect/Process `IntervalTrigger`s (`scheduler._interval_trigger`) are
