@@ -104,6 +104,40 @@ def test_delivery_window_min_hours_forces_catch_up(mem_db):
     assert pipeline._delivery_window_hours(24, min_hours=72) == 72
 
 
+# ---------------------------------------------------------------- run-lock collision
+def test_acquire_run_lock_skips_when_busy_and_not_waiting():
+    pipeline._run_lock.acquire()
+    try:
+        assert pipeline._acquire_run_lock("X", 0) is False        # non-blocking + busy -> skip
+    finally:
+        pipeline._run_lock.release()
+
+
+def test_acquire_run_lock_times_out_when_held():
+    pipeline._run_lock.acquire()
+    try:
+        assert pipeline._acquire_run_lock("X", 0.05) is False      # bounded wait expires -> skip
+    finally:
+        pipeline._run_lock.release()
+
+
+def test_acquire_run_lock_succeeds_when_free():
+    assert pipeline._acquire_run_lock("X", 0) is True
+    pipeline._run_lock.release()
+
+
+def test_acquire_run_lock_waits_then_acquires_after_release():
+    """A colliding phase that waits gets the lock once the holder releases (not dropped)."""
+    import threading
+
+    pipeline._run_lock.acquire()
+    threading.Timer(0.05, pipeline._run_lock.release).start()
+    try:
+        assert pipeline._acquire_run_lock("X", 5) is True          # waited out the holder
+    finally:
+        pipeline._run_lock.release()
+
+
 # ---------------------------------------------------------------- collector early-stop
 class _FakePage:
     """Returns the same batch of tweets on every evaluate(), counting scrolls."""

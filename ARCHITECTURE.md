@@ -54,16 +54,21 @@ run dropped); cross-day dedup still prevents re-sending anything already deliver
 - *Collection disabled* (default) → the evening job is the **legacy all-in-one** `run()` (scrape +
   summarize + deliver inline) — unchanged behavior, so single-job setups are unaffected.
 
-**Shared run-lock — and why delivery *waits* on it.** All pipeline entry points (collect, process,
-deliver, run, resume, replay) serialize on a single `pipeline._run_lock` so the scraper, draft
-refresh, and the UI "Run now" never touch the DB/archive concurrently. The collect/process/run
-guards acquire it **non-blocking** and simply *skip* if busy (the next interval fire will catch up).
-Delivery is the exception: it is the **once-daily critical job**, so `deliver_guarded` acquires the
-lock **blocking** (bounded ~30 min). A `collect` scrape holds the lock ~20 min and runs every few
-hours, so it periodically lands right on the evening `CronTrigger`; a non-blocking deliver would
-silently drop that day's send (the cron has no jobstore and won't retry until tomorrow). Blocking
-makes delivery queue behind the in-flight scrape instead of being skipped. *(Regression fixed
-2026-06-20 after a collect/deliver collision ate a nightly send.)*
+**Shared run-lock — scheduled phases *wait*, don't drop.** All pipeline entry points (collect,
+process, deliver, run, resume, replay) serialize on a single `pipeline._run_lock` so the scraper,
+draft refresh, and the UI "Run now" never touch the DB/archive concurrently. Each *scheduled* phase
+acquires it via `_acquire_run_lock(job, wait_seconds, critical=)` with a **bounded wait** so a
+collision runs the loser back-to-back instead of skipping it: deliver waits ~30 min (once-daily
+critical send), process ~25 min (so the draft is rebuilt *with* the fresh scrape rather than going
+stale), collect ~10 min. On timeout they skip and the next fire self-heals (collect early-stops to
+catch up; the draft rebuilds from the archive). This is safe because APScheduler runs each job with
+`max_instances=1`, so the same phase never overlaps itself — lock contention is *always* between
+different phases. A `collect` scrape holds the lock ~20 min and runs every few hours, so it
+periodically lands on the evening `CronTrigger` or a process tick; without waiting, that fire would
+be silently dropped (the cron has no jobstore and won't retry until the next interval). The manual
+`run`/`resume`/`replay` guards still acquire **non-blocking** and skip if busy (the user sees it).
+*(Delivery wait added 2026-06-20 after a collect/deliver collision ate a nightly send; collect &
+process waits added 2026-06-21.)*
 
 The daily delivery + weekly meta-digest `CronTrigger`s are built with the `timezone` setting
 (IANA, default `America/New_York`) so `schedule_hour`/`minute` mean local wall-clock time, not the

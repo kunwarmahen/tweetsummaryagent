@@ -36,6 +36,25 @@ def is_running() -> bool:
     return _run_lock.locked()
 
 
+# Bounded waits so a colliding *different* phase runs back-to-back instead of being silently
+# dropped. Same-type jobs never overlap (APScheduler runs each with max_instances=1), so any
+# contention is collect-vs-process-vs-deliver. On timeout we skip and let the next fire self-heal.
+_DELIVER_LOCK_WAIT_SECONDS = 30 * 60   # the once-daily send must not be dropped (critical)
+_PROCESS_LOCK_WAIT_SECONDS = 25 * 60   # draft refresh waits out a ~20-min collect, then rebuilds fresh
+_COLLECT_LOCK_WAIT_SECONDS = 10 * 60   # collect waits out a short process/deliver before scraping
+
+
+def _acquire_run_lock(job: str, wait_seconds: float, *, critical: bool = False) -> bool:
+    """Acquire the shared run lock, waiting up to `wait_seconds` (<=0 = don't wait, just skip)."""
+    if wait_seconds <= 0:
+        return _run_lock.acquire(blocking=False)
+    if _run_lock.acquire(blocking=True, timeout=wait_seconds):
+        return True
+    log = logger.error if critical else logger.warning
+    log("%s could not acquire the run lock within %.0f s; skipping this fire.", job, wait_seconds)
+    return False
+
+
 def run_guarded(max_accounts: int | None = None) -> DigestRun | None:
     """Run the pipeline unless one is already in progress."""
     if not _run_lock.acquire(blocking=False):
@@ -77,12 +96,13 @@ def replay_guarded(source_run_id: int, overrides: dict | None = None,
 
 
 def collect_guarded(trigger: str = "schedule") -> int:
-    """Scrape new tweets into the archive (Phase 1) unless a run is already in progress.
+    """Scrape new tweets into the archive (Phase 1).
 
-    Returns the number of newly-archived tweets (0 if skipped or nothing new).
+    Waits a bounded time for a colliding process/deliver to finish (rather than dropping the
+    scrape for a whole interval); on timeout it skips, and the next collect early-stops to catch
+    up. Returns the number of newly-archived tweets (0 if skipped or nothing new).
     """
-    if not _run_lock.acquire(blocking=False):
-        logger.info("A run is already in progress; skipping collection.")
+    if not _acquire_run_lock("Collection", _COLLECT_LOCK_WAIT_SECONDS):
         return 0
     try:
         return collect(trigger=trigger)
@@ -94,9 +114,13 @@ def collect_guarded(trigger: str = "schedule") -> int:
 
 
 def refresh_draft_guarded(trigger: str = "schedule") -> DigestRun | None:
-    """Refresh the live draft digest (Phase 2) unless a run is already in progress."""
-    if not _run_lock.acquire(blocking=False):
-        logger.info("A run is already in progress; skipping draft refresh.")
+    """Refresh the live draft digest (Phase 2).
+
+    Waits a bounded time for a colliding collect to finish so the draft is rebuilt *with* the
+    fresh scrape (instead of being skipped and going stale until the next process tick); on
+    timeout it skips, and the next refresh self-heals (the draft is rebuilt from the archive).
+    """
+    if not _acquire_run_lock("Draft refresh", _PROCESS_LOCK_WAIT_SECONDS):
         return None
     try:
         return refresh_draft(trigger=trigger)
@@ -107,21 +131,15 @@ def refresh_draft_guarded(trigger: str = "schedule") -> DigestRun | None:
         _run_lock.release()
 
 
-_DELIVER_LOCK_WAIT_SECONDS = 30 * 60
-
-
 def deliver_guarded() -> DigestRun | None:
     """Finalize + send the day's digest (Phase 3).
 
-    Unlike the other guards, delivery is the once-daily critical job and must not be
-    dropped just because a collect/process job happens to be mid-run when its cron fires.
-    APScheduler runs this in its own thread, so we *wait* for the shared lock (a collect
-    scrape holds it ~20 min) instead of skipping. Bounded so a wedged run can't hang the
-    scheduler thread forever; the missed-delivery alarm is louder than a brief stall.
+    Delivery is the once-daily critical job and must not be dropped just because a collect/process
+    job is mid-run when its cron fires, so it waits the longest for the shared lock (a collect
+    scrape holds it ~20 min). Bounded so a wedged run can't hang the scheduler thread forever; the
+    missed-delivery alarm is louder than a brief stall.
     """
-    if not _run_lock.acquire(blocking=True, timeout=_DELIVER_LOCK_WAIT_SECONDS):
-        logger.error("Delivery could not acquire the run lock within %d s; skipping delivery.",
-                     _DELIVER_LOCK_WAIT_SECONDS)
+    if not _acquire_run_lock("Delivery", _DELIVER_LOCK_WAIT_SECONDS, critical=True):
         return None
     try:
         return deliver()
